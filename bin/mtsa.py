@@ -230,6 +230,7 @@ def main():
 
     desc_build_txt = "build training data for SVR "
     desc_train_txt = "train SVR and calculate sequence factors for normalization"
+    desc_predict_txt = "score sequences using the trained SVR model"
 
     parser = argparse.ArgumentParser(description=desc_txt,
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -244,6 +245,11 @@ def main():
     subparser_train = subparsers.add_parser('train', 
             help=desc_train_txt,
             description=desc_train_txt,
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    subparser_predict = subparsers.add_parser('predict', 
+            help=desc_predict_txt,
+            description=desc_predict_txt,
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     # parser for the "build" command
@@ -287,6 +293,17 @@ def main():
     subparser_train.add_argument("-T", "--threads", type=int, default=1,
             help="number of threads for SVR training; 1, 4, or 16")
 
+    # parser for the "predict" command
+    subparser_predict.add_argument("input_fn", type=str,
+            help="input sequence file for scoring")
+    subparser_predict.add_argument("output_fn", type=str,
+            help="output file name")
+
+    subparser_predict.add_argument("-n", "--name", type=str, required=True, 
+            help="prefix used in 'build/train' command for training data set. REQUIRED")
+    subparser_predict.add_argument("-T", "--threads", type=int, default=1,
+            help="number of threads for scoring; 1, 4, or 16")
+
     args = parser.parse_args()
 
     # compatible with clog format..
@@ -319,6 +336,9 @@ def main():
         HEADER += "\n#   CV={0}".format(args.cv)
         HEADER += "\n#   RANDOM_SEEDS={0}".format(args.random_seeds)
         HEADER += "\n#   NUM_THREADS={0}".format(args.threads)
+
+    if args.commands == "predict":
+        HEADER += "\n#   OUTPUT_NAME={0}".format(args.name)
 
     logging.info(HEADER)
 
@@ -376,6 +396,22 @@ def main():
         logging.info("# 3. calculate the sequence factor for normalization")
         logging.info("#####################################################")
         cal_tag_sequence_factor(args, CVFILE, RTAGSCOREFILE)
+
+    if args.commands == "predict":
+        dll_name = os.path.join(os.path.dirname(__file__), "libmtsa.so")
+        libmtsa=CDLL(dll_name)
+
+        nthreads = c_int(args.threads)
+        libmtsa.mtsa_init(2, nthreads)
+
+        logging.info("###########################################")
+        logging.info("#  score sequences using the trained model ")
+        logging.info("###########################################")
+
+        testfile=c_char_p(args.input_fn)
+        modelfile=c_char_p(MODELFILE)
+        outfile=c_char_p(args.output_fn)
+        libmtsa.mtsa_predict_main(testfile, modelfile, outfile)
 
 if __name__=='__main__':
     main()
