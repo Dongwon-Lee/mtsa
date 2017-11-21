@@ -24,9 +24,8 @@ import argparse
 import os.path
 import math
 import logging
-import numpy as np
+from itertools import imap
 from ctypes import *
-import statsmodels.api as sm
 
 __version__ = '1.0.0'
 
@@ -158,6 +157,16 @@ def build_training_data(args, ttagfile, rtagfile):
         fp.write("{0}\n".format(tag))
     fp.close()
 
+def pearsonr(x, y):
+    n = float(len(x))
+    sum_x = float(sum(x))
+    sum_y = float(sum(y))
+    sum_x_sq = sum(map(lambda x: pow(x, 2), x))
+    sum_y_sq = sum(map(lambda x: pow(x, 2), y))
+    prod_sum = sum(imap(lambda x, y: x * y, x, y))
+    den = pow((sum_x_sq - pow(sum_x, 2) / n) * (sum_y_sq - pow(sum_y, 2) / n), 0.5)
+    if den == 0: return 0
+    return (prod_sum - (sum_x * sum_y/n))/den
 
 def cal_tag_sequence_factor(args, cvfile, rtagfile):
     # perform linear regression using CV result
@@ -180,22 +189,9 @@ def cal_tag_sequence_factor(args, cvfile, rtagfile):
         ttags_logratio.append(float(f[2]))
     fp.close()
 
-    X = np.array(ttags_svr).reshape(len(ttags_svr), 1) 
-    y = np.array(ttags_logratio).reshape(len(ttags_logratio), 1) 
-    X2 = sm.add_constant(X)
-
-    model = sm.OLS(y, X2)
-    results = model.fit()
-
-    logging.info("fitting linear regression model:")
-    logging.info("* beta_0: %g (SE: %g, t-value: %g)",
-            results.params[0], results.bse[0], results.tvalues[0]) 
-    logging.info("* beta_1: %g (SE: %g, t-value: %g)",
-            results.params[1], results.bse[1], results.tvalues[1]) 
-    logging.info("* adjusted R^2: %g", results.rsquared_adj) 
-
-    b0 = results.params[0]
-    b1 = results.params[1]
+    #calculate Pearson's correlation
+    r = pearsonr(ttags_svr, ttags_logratio)
+    logging.info("R^2: %g", r)
 
     # load tag SVR scores that were NOT in the training set
     try:
@@ -217,7 +213,7 @@ def cal_tag_sequence_factor(args, cvfile, rtagfile):
     seqfactfile = args.name + ".sequence_factor.txt"
     fp = open(seqfactfile, 'w')
     for t in sorted(tags_seq_svr.keys()):
-        fp.write("{0}\t{1}\n".format(t, 2**(b0 + b1*tags_seq_svr[t])))
+        fp.write("{0}\t{1}\n".format(t, pow(2, tags_seq_svr[t])))
     fp.close()
 
 def main():
