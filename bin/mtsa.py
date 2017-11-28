@@ -85,7 +85,7 @@ def build_training_data(args, ttagfile, rtagfile):
         sys.exit(0)
 
     logging.info("%d elements loaded", len(dna_ids))
-    logging.info("%d tags per element ", len(dna_cnts[0]))
+    logging.info("%d tags per element", len(dna_cnts[0]))
     logging.info("%d tags total", len(dna_ids)*len(dna_cnts[0]))
 
     bad_tags = []
@@ -124,16 +124,17 @@ def build_training_data(args, ttagfile, rtagfile):
         mrna_i = mrna_cnts[i]
         dna_i = dna_cnts[i]
         bad_i = bad_tags[i]
+        elemid = dna_ids[i]
 
         log2ratio_i = [ (t, math.log(m/float(d), 2) )
                 for j, (t, m, d) in enumerate(zip(tags_i, mrna_i, dna_i))
                 if not bad_i[j] ]
 
         mean = sum([v for (t, v) in log2ratio_i])/float(len(log2ratio_i))
-        log2ratio_i_norm = [(t, v - mean) for (t, v) in log2ratio_i]
+        log2ratio_i_norm = [(t, v - mean, elemid) for (t, v) in log2ratio_i]
         training_tags.extend(log2ratio_i_norm)
-    
-        excluded_tags.extend([t for j, t in enumerate(tags[i]) if bad_i[j]])
+
+        excluded_tags.extend([(t, elemid) for j, t in enumerate(tags[i]) if bad_i[j]])
 
     fp = open(ttagfile, 'w')
     for i in xrange(len(training_tags)):
@@ -142,19 +143,19 @@ def build_training_data(args, ttagfile, rtagfile):
             tag = args.left_flanking_seq + tag
         if args.right_flanking_seq != None:
             tag = tag + args.right_flanking_seq
-        fp.write("{0}\t{1}\n".format(tag, training_tags[i][1]))
+        fp.write("{0}\t{1}\t{2}\n".format(tag, training_tags[i][1], training_tags[i][2]))
     fp.close()
-    
+
     logging.info("%d tags written to %s for SVR training", len(training_tags), ttagfile)
 
     fp = open(rtagfile, 'w')
     for i in xrange(len(excluded_tags)):
-        tag = excluded_tags[i]
+        tag = excluded_tags[i][0]
         if args.left_flanking_seq != None:
             tag = args.left_flanking_seq + tag
         if args.right_flanking_seq != None:
             tag = tag + args.right_flanking_seq
-        fp.write("{0}\n".format(tag))
+        fp.write("{0}\t{1}\n".format(tag, excluded_tags[i][1]))
     fp.close()
 
 def pearsonr(x, y):
@@ -168,30 +169,39 @@ def pearsonr(x, y):
     if den == 0: return 0
     return (prod_sum - (sum_x * sum_y/n))/den
 
-def cal_tag_sequence_factor(args, cvfile, rtagfile):
-    # perform linear regression using CV result
-    try:
-        fp = open(cvfile, 'r')
-    except IOError as e:
-        logging.error("cannot open '%s' (errno=%d)", cvfile, e.errno)
-        sys.exit(0)
-    except:
-        raise
+def cal_tag_sequence_factor(args):
+    rtagfile = args.name + ".excluded_tags.score.txt"
 
-    tags_seq_svr = dict()
-    ttags_svr = []
-    ttags_logratio = []
-    for line in fp:
-        f = line.strip().split('\t')
-        svr = float(f[1])
-        tags_seq_svr[f[0]] = svr
-        ttags_svr.append(svr)
-        ttags_logratio.append(float(f[2]))
-    fp.close()
+    tag2svr = dict()
+    tag2logr = dict()
+    nrepeats = float(args.repeats)
+    for i in xrange(args.repeats):
+        cvfile = args.name + ".adj." + str(i) + ".cv.txt"
+        # calculate Pearson's correlation using CV result
+        try:
+            fp = open(cvfile, 'r')
+        except IOError as e:
+            logging.error("cannot open '%s' (errno=%d)", cvfile, e.errno)
+            sys.exit(0)
+        except:
+            raise
 
-    #calculate Pearson's correlation
-    r = pearsonr(ttags_svr, ttags_logratio)
-    logging.info("R^2: %g", r)
+        for line in fp:
+            f = line.strip().split('\t')
+            tag = f[0]
+            svr = float(f[1])/nrepeats
+            logr = float(f[2])
+            if i == 0:
+                tag2svr[tag] = svr
+                tag2logr[tag] = logr
+            else:
+                tag2svr[tag] += svr
+        fp.close()
+
+    # calculate Pearson's correlation
+    r = pearsonr([tag2svr[t] for t in tag2svr.keys()],
+            [tag2logr[t] for t in tag2svr.keys()])
+    logging.info("Pearson's r = %g", r)
 
     # load tag SVR scores that were NOT in the training set
     try:
@@ -203,17 +213,70 @@ def cal_tag_sequence_factor(args, cvfile, rtagfile):
         raise
     for line in fp:
         f = line.strip().split('\t')
-        tags_seq_svr[f[0]] = float(f[1])
+        tag2svr[f[0]] = float(f[1])
     fp.close()
 
     # calculate tag sequence effect
-    #tag_ids, tags = read_tsv_data(args.tag_seq_fn)
-    #tse = [ [2**(b0 + (tags_seq_svr[t]*b1)) for t in r] for r in tags ]
-
     seqfactfile = args.name + ".sequence_factor.txt"
     fp = open(seqfactfile, 'w')
-    for t in sorted(tags_seq_svr.keys()):
-        fp.write("{0}\t{1}\n".format(t, pow(2, tags_seq_svr[t])))
+    for t in sorted(tag2svr.keys()):
+        fp.write("{0}\t{1}\n".format(t, tag2svr[t]))
+    fp.close()
+
+
+def adjust_tag_group_effect(ttagfile, cvfile, ttag_adj_file):
+    try:
+        fp = open(ttagfile, 'r')
+    except IOError as e:
+        logging.error("cannot open '%s' (errno=%d)", cvfile, e.errno)
+        sys.exit(0)
+    except:
+        raise
+
+    elemid2tags = dict()
+    tag2elemid = dict()
+    for line in fp:
+        f = line.strip().split('\t')
+        tag = f[0]
+        elemid = f[2]
+        if elemid not in elemid2tags:
+            elemid2tags[elemid] = []
+        elemid2tags[elemid].append(tag)
+        tag2elemid[tag] = elemid
+    fp.close()
+
+    elemids = elemid2tags.keys()
+
+    try:
+        fp = open(cvfile, 'r')
+    except IOError as e:
+        logging.error("cannot open '%s' (errno=%d)", cvfile, e.errno)
+        sys.exit(0)
+    except:
+        raise
+
+    t2s = dict()
+    training_tags = []
+    for line in fp:
+        f = line.strip().split('\t')
+        tag = f[0]
+        t2s[tag] = float(f[1])
+        training_tags.append((tag, float(f[2])))
+    fp.close()
+
+    avg = lambda x: sum(x)/float(len(x))
+    global_effects = [ avg(map(lambda x: t2s[x], elemid2tags[e]))
+            for e in elemids ]
+
+    tag2ge = dict()
+    for i, eid in enumerate(elemids):
+        ge = global_effects[i]
+        for t in elemid2tags[eid]:
+            tag2ge[t] = ge
+
+    fp = open(ttag_adj_file, 'w')
+    for tag, rexpr in training_tags:
+        fp.write("{0}\t{1}\t{2}\n".format(tag, rexpr + tag2ge[tag],tag2elemid[tag]))
     fp.close()
 
 def main():
@@ -286,6 +349,8 @@ def main():
             help="x-fold cross validation for estimating effects of tags in training set")
     subparser_train.add_argument("-s", "--random-seeds", type=int, default=1,
             help="random seed number for reproducibility of cross-validation")
+    subparser_train.add_argument("-r", "--repeats", type=int, default=1,
+            help="number of repeats of CV training to reduce random variation")
     subparser_train.add_argument("-T", "--threads", type=int, default=1,
             help="number of threads for SVR training; 1, 4, or 16")
 
@@ -332,22 +397,23 @@ def main():
         HEADER += "\n#   CV={0}".format(args.cv)
         HEADER += "\n#   RANDOM_SEEDS={0}".format(args.random_seeds)
         HEADER += "\n#   NUM_THREADS={0}".format(args.threads)
+        HEADER += "\n#   CV_REPEATS={0}".format(args.repeats)
 
     if args.commands == "predict":
         HEADER += "\n#   OUTPUT_NAME={0}".format(args.name)
 
     logging.info(HEADER)
 
+    # input/output files 
     TTAGFILE = args.name + ".tag_rexpr.txt"
+    TTAG_ADJ_FILE = args.name + ".tag_rexpr_adj.txt"
     RTAGFILE = args.name + ".excluded_tags.txt"
-    MODELFILE = args.name + ".model.txt"
+    MODELFILE = args.name + ".adj.model.txt" # model trained on adjusted data`
     RTAGSCOREFILE = args.name + ".excluded_tags.score.txt"
     CVFILE = args.name + ".cv.txt"
 
     if args.commands == "build":
-        logging.info("#########################")
-        logging.info("#  build training data ")
-        logging.info("#########################")
+        logging.info("### build training data")
         build_training_data(args, TTAGFILE, RTAGFILE)
 
     if args.commands == "train":
@@ -371,27 +437,37 @@ def main():
 
         libmtsa.mtsa_init(2, nthreads)
 
-        logging.info("#######################################")
-        logging.info("# 1. perform cross-validation with SVR")
-        logging.info("#######################################")
+        logging.info("### 1. perform initial cross-validation")
         libmtsa.mtsa_train_main(tdfile, outprefix, rseed,
                 L, k, d, norc, Cp, p, eps, ncv, cache_size)
 
-        logging.info("##########################################################")
-        logging.info("# 2. build SVR model using all data & score excluded tags")
-        logging.info("##########################################################")
-        libmtsa.mtsa_train_main(tdfile, outprefix, rseed,
+        logging.info("### 2. perform second cross-validation(s) with adjusted exprs")
+
+        adjust_tag_group_effect(TTAGFILE, CVFILE, TTAG_ADJ_FILE)
+
+        adj_tdfile=c_char_p(TTAG_ADJ_FILE)
+        logging.info("repeat cross-valiations %d time(s)", args.repeats)
+        #repeat cross validation with different random seeds
+        for i in xrange(args.repeats):
+            logging.info("repeated cross-valiation #%d", i+1)
+            outprefix_adj = c_char_p(args.name + ".adj." + str(i))
+            rseed = c_int(args.random_seeds+i)
+            libmtsa.mtsa_train_main(adj_tdfile, outprefix_adj, rseed,
+                    L, k, d, norc, Cp, p, eps, ncv, cache_size)
+
+        logging.info("### 3. build a model using all data")
+        outprefix_adj = c_char_p(args.name + ".adj")
+        libmtsa.mtsa_train_main(adj_tdfile, outprefix_adj, rseed,
                 L, k, d, norc, Cp, p, eps, 0, cache_size)
 
+        logging.info("### 4. score excluded tags")
         testfile=c_char_p(RTAGFILE)
         modelfile=c_char_p(MODELFILE)
         outfile=c_char_p(RTAGSCOREFILE)
         libmtsa.mtsa_predict_main(testfile, modelfile, outfile)
 
-        logging.info("#####################################################")
-        logging.info("# 3. calculate the sequence factor for normalization")
-        logging.info("#####################################################")
-        cal_tag_sequence_factor(args, CVFILE, RTAGSCOREFILE)
+        logging.info("### 5. calculate the sequence factor for normalization")
+        cal_tag_sequence_factor(args)
 
     if args.commands == "predict":
         dll_name = os.path.join(os.path.dirname(__file__), "libmtsa.so")
@@ -400,9 +476,7 @@ def main():
         nthreads = c_int(args.threads)
         libmtsa.mtsa_init(2, nthreads)
 
-        logging.info("###########################################")
-        logging.info("#  score sequences using the trained model ")
-        logging.info("###########################################")
+        logging.info("### score sequences using the trained model")
 
         testfile=c_char_p(args.input_fn)
         modelfile=c_char_p(MODELFILE)
