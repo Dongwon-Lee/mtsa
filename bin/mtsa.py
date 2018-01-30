@@ -339,6 +339,7 @@ def main():
 
     if args.commands == "predict":
         HEADER += "\n#   OUTPUT_NAME={0}".format(args.name)
+        HEADER += "\n#   NUM_THREADS={0}".format(args.threads)
 
     logging.info(HEADER)
 
