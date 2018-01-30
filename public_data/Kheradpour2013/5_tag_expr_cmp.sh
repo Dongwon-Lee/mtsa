@@ -3,8 +3,9 @@
 set -o errexit
 set -o nounset
 
-INDIR=Kheradpour2013_processed
-OUTDIR=tag_expr_cmp_khe13
+INDIR=processed
+OUTDIR=tag_expr_cmp
+MTSA=../../bin/mtsa.py
 
 mkdir -p $OUTDIR
 
@@ -19,12 +20,12 @@ cut -f 3 ${INDIR}/mpra_tags.txt |sed 's/\(.*\)/CTAGA\1AGATC/g' >${OUTDIR}/tags_c
 
 # build data
 EXPNAME=${OUTDIR}/mtsa_khe13_tr.m500.t5.e5
-../bin/mtsa.py build -m 500 -t 5 -l CTAGA -r AGATC -n ${EXPNAME}\
+${MTSA} build -m 500 -t 5 -l CTAGA -r AGATC -n ${EXPNAME}\
     ${OUTDIR}/dna_tr.txt ${OUTDIR}/mrna_tr.txt ${OUTDIR}/tag_tr.txt
 
 # model training with default parameter
-../bin/mtsa.py train -n ${EXPNAME}
+${MTSA} train -n ${EXPNAME}
 
 # predicting effects of the held-out tags
-../bin/mtsa.py predict -T 4 -n ${EXPNAME} ${OUTDIR}/tags_col1.txt ${OUTDIR}/tags_col1_score.txt
-../bin/mtsa.py predict -T 4 -n ${EXPNAME} ${OUTDIR}/tags_col2.txt ${OUTDIR}/tags_col2_score.txt
+${MTSA} predict -T 4 -n ${EXPNAME} ${OUTDIR}/tags_col1.txt ${OUTDIR}/tags_col1_score.txt
+${MTSA} predict -T 4 -n ${EXPNAME} ${OUTDIR}/tags_col2.txt ${OUTDIR}/tags_col2_score.txt
