@@ -25,8 +25,18 @@ pdf(outfn, width=wd*fig.ncols, height=ht*fig.nrows)
 par(cex=cex.general, ps=pt, cex.axis=cex.axis, cex.lab=cex.lab, cex.main=cex.main, font.main=1, bty="n")
 par(mar=c(3.0,3.0,1.5,1.5)+0.1, mgp=c(1.3,0.3,0), tck=-0.02, mfrow = c(fig.nrows, fig.ncols))
 
-plot(svr, expr, 
-     col=densCols(svr, expr),
+
+df <- data.frame(svr, expr)
+x <- densCols(df$svr, df$expr, colramp=colorRampPalette(c("black", "white")))
+
+df$dens <- col2rgb(x)[1,] + 1L
+
+## Map densities to colors
+cols <-  colorRampPalette(c("#000099", "#00FEFF", "#45FE4F",
+                            "#FCFF00", "#FF9400", "#FF3100"))(256)
+df$col <- cols[df$dens]
+
+plot(expr ~ svr, data=df[order(df$dens),], col=col,
      pch=20, cex=0.5,
      xlab="Predicted expression from tag sequence", ylab="Relative expression")
 abline(a=0, b=1, lty=2, col=2)

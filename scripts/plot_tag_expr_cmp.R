@@ -34,9 +34,19 @@ cex.axis <- 1
 cex.main <- 1
 cex.legend <- 1
 
+
 scatterplot_tag_expr<-function(r1, r2, range, title) {
-    plot(r1, r2, 
-         col=densCols(r1, r2),
+    df <- data.frame(r1, r2)
+    x <- densCols(df$r1,df$r2, colramp=colorRampPalette(c("black", "white")))
+
+    df$dens <- col2rgb(x)[1,] + 1L
+
+    ## Map densities to colors
+    cols <-  colorRampPalette(c("#000099", "#00FEFF", "#45FE4F",
+                                "#FCFF00", "#FF9400", "#FF3100"))(256)
+    df$col <- cols[df$dens]
+
+    plot(r2~r1, data=df[order(df$dens),], col=col,
          main=title, pch=20, cex=0.5,
          xlim=range, ylim=range,
          xlab="tag1 expr", ylab="tag2 expr")
@@ -65,9 +75,9 @@ par(cex=cex.general, ps=pt, cex.axis=cex.axis, cex.lab=cex.lab, cex.main=cex.mai
 par(xaxs="i", yaxs="i", mar=c(3.0,3.0,1.5,1.5)+0.1, mgp=c(1.3,0.3,0), tck=-0.02, mfrow = c(fig.nrows, fig.ncols))
 
 scatterplot_tag_expr(r1, r2, range_lin, "original")
-scatterplot_tag_expr(nr1, nr2, range_lin, "after normalization")
+scatterplot_tag_expr(nr1, nr2, range_lin, "after MTSA normalization")
 
 scatterplot_tag_expr(lr1, lr2, range_log, "original (log2 scale)")
-scatterplot_tag_expr(lnr1, lnr2, range_log, "after normalization (log2 scale)")
+scatterplot_tag_expr(lnr1, lnr2, range_log, "after MTSA normalization (log2 scale)")
 
 dev.off()
