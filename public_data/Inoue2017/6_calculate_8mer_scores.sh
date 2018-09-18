@@ -5,7 +5,7 @@ set -o nounset
 
 MTSA=../../bin/mtsa.py
 INDIR=processed
-EXPNAME=${INDIR}/mtsa_ino17.m100.t10.e5
+EXPNAME=${INDIR}/mtsa_ino17.m50.t10.e5
 KMERF=../8mers.txt
 
 if [[ -f $KMERF ]]; then

@@ -19,9 +19,9 @@ cut -f 2 ${INDIR}/mpra_tags.txt |sed 's/\(.*\)/AATTC\1CATTG/g' >${OUTDIR}/tags_c
 cut -f 3 ${INDIR}/mpra_tags.txt |sed 's/\(.*\)/AATTC\1CATTG/g' >${OUTDIR}/tags_col2.txt
 
 # build data
-EXPNAME=${OUTDIR}/mtsa_ino17_tr.m100.t10.e5
+EXPNAME=${OUTDIR}/mtsa_ino17_tr.m50.t10.e5
 
-${MTSA} build -m 100 -t 10 -l AATTC -r CATTG -n ${EXPNAME}\
+${MTSA} build -m 50 -t 10 -l AATTC -r CATTG -n ${EXPNAME}\
     ${OUTDIR}/dna_tr.txt ${OUTDIR}/mrna_tr.txt ${OUTDIR}/tag_tr.txt
 
 # training
