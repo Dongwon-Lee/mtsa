@@ -12,3 +12,5 @@ MPRA_minP_mtsanorm.norm.diff.pvalues.combined.txt
 MPRA_minP_mtsanorm.norm.txt
 MPRA_minP_mtsanorm.txt
 plot_mfc_vs_dsvm_mfv.pdf
+plot_mfc_vs_dsvm_mfv_barplot.pdf
+plot_mfc_vs_dsvm_mfv_scatterplot.pdf   

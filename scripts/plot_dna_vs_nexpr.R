@@ -6,6 +6,18 @@ plasmid_cnt_fn<-args[1]
 mrna_cnt_fn<-args[2]
 out_fn<-args[3]
 
+wd <- 2
+ht <- 1.5
+fig.nrows <- 3
+fig.ncols <- 1
+pt <- 8
+cex.general <- 1
+cex.lab <- 1
+cex.axis <- 1
+cex.main <- 1
+cex.legend <- 1
+lwd<-0.5
+
 plot_plasmid_expr<-function(plasmid_fn, mrna_fn, titletxt, expr_threshold=1) {
 
     counts.plasmid<-read.table(plasmid_fn, header=F, stringsAsFactors=F)
@@ -60,7 +72,8 @@ plot_plasmid_expr<-function(plasmid_fn, mrna_fn, titletxt, expr_threshold=1) {
         }
     }
 
-    par(mar=c(4,4,1,1)+0.1, mfrow=c(3,1))
+    par(cex=cex.general, ps=pt, cex.axis=cex.axis, cex.lab=cex.lab, cex.main=cex.main, lwd=lwd, font.main=1, bty="n")
+    par(mar=c(2.5,2.5,0.5,0.5)+0.1, mgp=c(1.3,0.3,0), tck=-0.04, mfrow = c(fig.nrows, fig.ncols))
 
     smoothScatter(log10(res$plasmid), res$expr,
          xlab="log10(DNA tag counts)", ylab="Relative expression", main=titletxt)
@@ -80,7 +93,6 @@ plot_plasmid_expr<-function(plasmid_fn, mrna_fn, titletxt, expr_threshold=1) {
 
 }
 
-pdf(out_fn, width=3.5, height=6)
+pdf(out_fn, width=1.8, height=4.25)
 plot_plasmid_expr(plasmid_cnt_fn, mrna_cnt_fn, "")
 dev.off()
-

@@ -36,12 +36,16 @@ cols <-  colorRampPalette(c("#000099", "#00FEFF", "#45FE4F",
                             "#FCFF00", "#FF9400", "#FF3100"))(256)
 df$col <- cols[df$dens]
 
-plot(expr ~ svr, data=df[order(df$dens),], col=col,
+plot(svr ~ expr, data=df[order(df$dens),], col=col,
      pch=20, cex=0.5,
-     xlab="Predicted expression from tag sequence", ylab="Relative expression")
+     xlab="Observed expression",
+     ylab="Predicted expression from tag sequence")
+
 abline(a=0, b=1, lty=2, col=2)
 pc<-cor(svr, expr)
-legend("topleft", legend=paste("C =", format(pc, nsmall=2, digits=2)),
+legend("topleft",
+       legend=c(paste("r =", format(pc, nsmall=2, digits=2)),
+                paste("n =", format(nrow(df), big.mark=","))),
         bty="n", inset=c(-0.1, 0), cex=cex.legend)
 
 dev.off()

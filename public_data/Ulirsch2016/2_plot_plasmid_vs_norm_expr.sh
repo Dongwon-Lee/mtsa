@@ -14,6 +14,6 @@ Rscript ${SCRIPT} \
 
 echo "evaluating GATA data"
 Rscript ${SCRIPT} \
-    processed_gata/mpra_dna_counts.txt \
-    processed_gata/mpra_mrna_counts.txt \
-    processed_gata/dna_vs_nexpr.pdf
+    processed/mpra_dna_counts.txt \
+    processed/mpra_mrna_counts_gata.txt \
+    processed/dna_vs_nexpr_gata.pdf

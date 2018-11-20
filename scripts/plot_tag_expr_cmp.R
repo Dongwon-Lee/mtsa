@@ -4,8 +4,7 @@
 args<-commandArgs(trailingOnly=T)
 
 workingdir<-args[1]
-
-tag_cnt_cutoff<-100
+tag_cnt_cutoff<-as.numeric(args[2]) # 100
 
 d<-read.table(file.path(workingdir, "dna_te.txt"))
 m<-read.table(file.path(workingdir, "mrna_te.txt"))
@@ -23,17 +22,16 @@ rc2<-(mc2/d[[2]]) # Ratio using normalized counts
 ind<-((d[[1]]>=tag_cnt_cutoff) & (d[[2]]>=tag_cnt_cutoff) & (m[[1]]>0) & (m[[2]]>0)) 
 
 #setup for figure
-wd <- 2.5
-ht <- 2.5
-fig.nrows <- 2
-fig.ncols <- 2
-pt <- 10
-cex.general <- 0.7
+wd <- 1.8
+ht <- 1.8
+fig.nrows <- 1
+fig.ncols <- 4
+pt <- 8 
+cex.general <- 1
 cex.lab <- 1
 cex.axis <- 1
 cex.main <- 1
 cex.legend <- 1
-
 
 scatterplot_tag_expr<-function(r1, r2, range, title) {
     df <- data.frame(r1, r2)
@@ -52,7 +50,7 @@ scatterplot_tag_expr<-function(r1, r2, range, title) {
          xlab="tag1 expr", ylab="tag2 expr")
     abline(a=0, b=1, lty=2, col=2)
     pc<-cor(r1, r2)
-    legend("topleft", legend=paste("C =", format(pc, nsmall=2, digits=2)),
+    legend("topleft", legend=paste("r =", format(pc, nsmall=2, digits=2)),
             bty="n", inset=c(-0.1, 0), cex=cex.legend)
 }
 
@@ -72,7 +70,7 @@ range_log<-c(min(lr1, lr2, lnr1, lnr2)-0.1, max(lr1, lr2, lnr1, lnr2)+0.1)
 
 pdf(file.path(workingdir, "plot_tag_expr_cmp.pdf"), width=wd*fig.ncols, height=ht*fig.nrows)
 par(cex=cex.general, ps=pt, cex.axis=cex.axis, cex.lab=cex.lab, cex.main=cex.main, font.main=1, bty="n")
-par(xaxs="i", yaxs="i", mar=c(3.0,3.0,1.5,1.5)+0.1, mgp=c(1.3,0.3,0), tck=-0.02, mfrow = c(fig.nrows, fig.ncols))
+par(xaxs="i", yaxs="i", mar=c(2.2,2.2,1.3,1.3)+0.1, mgp=c(1.3,0.3,0), tck=-0.02, mfrow = c(fig.nrows, fig.ncols))
 
 scatterplot_tag_expr(r1, r2, range_lin, "original")
 scatterplot_tag_expr(nr1, nr2, range_lin, "after MTSA normalization")
