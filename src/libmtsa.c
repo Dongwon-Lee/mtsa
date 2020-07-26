@@ -1,6 +1,6 @@
 /* libmtsa.c
  *
- * Copyright (C) 2017 Dongwon Lee
+ * Copyright (C) 2020 Dongwon Lee
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
