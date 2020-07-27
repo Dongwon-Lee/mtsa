@@ -111,7 +111,7 @@ static void read_training_data_file(const char *filename)
     FILE *fp = fopen(filename,"r");
 
     if(fp == NULL) {
-        clog_error(CLOG(LOGGER_ID), "can't open file");
+        clog_error(CLOG(LOGGER_ID), "can't open input file %s", filename);
         exit(1);
     }
 
@@ -162,7 +162,7 @@ static int count_lines(const char *filename)
     int nseqs = 0;
 
     if(fp == NULL) {
-        clog_error(CLOG(LOGGER_ID), "can't open file");
+        clog_error(CLOG(LOGGER_ID), "can't open input file %s", filename);
         exit(1);
     }
 
@@ -249,13 +249,11 @@ int mtsa_init(int verbosity, int nthreads)
 int mtsa_train_main(char *tdfile, char *outprefix,
         int rseed, int L, int k, int d,
         int norc, double Cp, double p, double eps,
-        int ncv, double cache_size)
+        int ncv, int icv, double cache_size)
 {
     char model_file_name[1024];
     char cv_file_name[1024];
     const char *error_msg;
-
-    int icv = 0;
 
     // default values
     param.svm_type = EPSILON_SVR;
@@ -303,7 +301,7 @@ int mtsa_train_main(char *tdfile, char *outprefix,
         //clog_info(CLOG(LOGGER_ID), "random seed is set to %d", rseed);
 
         if (icv>0) {
-            /* save CV results to this file if -x option is set */
+            /* save CV results to this file if -i option is set */
             sprintf(cv_file_name,"%s.cv.%d.txt", outprefix, icv); 
         } else {
             sprintf(cv_file_name,"%s.cv.txt", outprefix); 

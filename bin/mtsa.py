@@ -24,8 +24,12 @@ import argparse
 import os.path
 import math
 import logging
-from itertools import imap
 from ctypes import *
+
+try:
+    from itertools import imap
+except ImportError:
+    imap=map # Python 3...
 
 __version__ = '1.0.0'
 
@@ -60,7 +64,7 @@ def read_tsv_data(filename, trans_func=None):
             sys.exit(0)
 
         if trans_func != None:
-            d = map(trans_func, d)
+            d = list(map(trans_func, d))
 
         elemids.append(f[0])
         data.append(d)
@@ -84,14 +88,16 @@ def build_training_data(args, ttagfile, rtagfile):
         logging.error("Element IDs do not match between input files.")
         sys.exit(0)
 
+    len_dna_cnts = len(list(dna_cnts))
+    len_tag_cnts = len(list(dna_cnts[0]))
     logging.info("%d elements loaded", len(dna_ids))
-    logging.info("%d tags per element", len(dna_cnts[0]))
-    logging.info("%d tags total", len(dna_ids)*len(dna_cnts[0]))
+    logging.info("%d tags per element", len_tag_cnts)
+    logging.info("%d tags total", len(dna_ids)*len_tag_cnts)
 
     bad_tags = []
     num_good_tags_per_elem = []
     log2ratio = []
-    for i in xrange(len(dna_cnts)):
+    for i in range(len_dna_cnts):
         bad_tags_one_row = [True
                 if (d < args.min_dna_read_cnts) or (m == 0) else False
                 for (d, m) in zip(dna_cnts[i], mrna_cnts[i])]
@@ -115,7 +121,7 @@ def build_training_data(args, ttagfile, rtagfile):
 
     training_tags = []
     excluded_tags = []
-    for i in xrange(len(dna_cnts)):
+    for i in range(len_dna_cnts):
         tags_i = tags[i]
         elemid = dna_ids[i]
 
@@ -127,30 +133,38 @@ def build_training_data(args, ttagfile, rtagfile):
         dna_i = dna_cnts[i]
         bad_i = bad_tags[i]
 
-        log2ratio_i = [ (t, math.log(m/float(d), 2) )
+        #log2ratio_i = [ (t, math.log(m/float(d), 2) )
+        #        for j, (t, m, d) in enumerate(zip(tags_i, mrna_i, dna_i))
+        #        if not bad_i[j] ]
+
+        #mean = sum([v for (t, v) in log2ratio_i])/float(len(log2ratio_i))
+        #log2ratio_i_norm = [(t, v - mean, elemid) for (t, v) in log2ratio_i]
+
+        log2ratio_i = [ (t, math.log(m/float(d), 2), m, d)
                 for j, (t, m, d) in enumerate(zip(tags_i, mrna_i, dna_i))
                 if not bad_i[j] ]
-
-        mean = sum([v for (t, v) in log2ratio_i])/float(len(log2ratio_i))
-        log2ratio_i_norm = [(t, v - mean, elemid) for (t, v) in log2ratio_i]
+        mean = sum([v for (t, v, m, d) in log2ratio_i])/float(len(log2ratio_i))
+        log2ratio_i_norm = [(t, v - mean, m, d, elemid) for (t, v, m, d) in log2ratio_i]
         training_tags.extend(log2ratio_i_norm)
 
         excluded_tags.extend([(t, elemid) for j, t in enumerate(tags[i]) if bad_i[j]])
 
     fp = open(ttagfile, 'w')
-    for i in xrange(len(training_tags)):
+    for i in range(len(training_tags)):
         tag = training_tags[i][0]
         if args.left_flanking_seq != None:
             tag = args.left_flanking_seq + tag
         if args.right_flanking_seq != None:
             tag = tag + args.right_flanking_seq
-        fp.write("{0}\t{1}\t{2}\n".format(tag, training_tags[i][1], training_tags[i][2]))
+        #fp.write("{0}\t{1}\t{2}\n".format(tag, training_tags[i][1], training_tags[i][2]))
+        #fp.write("{0}\t{1}\t{2}\t{3}\t{4}\n".format(tag, training_tags[i][1], training_tags[i][2], training_tags[i][3], training_tags[i][4]))
+        fp.write("{0}\t{1}\t{2}\n".format(tag, training_tags[i][1], training_tags[i][4]))
     fp.close()
 
     logging.info("%d tags written to %s for SVR training", len(training_tags), ttagfile)
 
     fp = open(rtagfile, 'w')
-    for i in xrange(len(excluded_tags)):
+    for i in range(len(excluded_tags)):
         tag = excluded_tags[i][0]
         if args.left_flanking_seq != None:
             tag = args.left_flanking_seq + tag
@@ -176,7 +190,7 @@ def cal_tag_sequence_factor(args):
     tag2svr = dict()
     tag2logr = dict()
     nrepeats = float(args.repeats)
-    for i in xrange(args.repeats):
+    for i in range(args.repeats):
         cvfile = args.name + ".adj." + str(i) + ".cv.txt"
         # calculate Pearson's correlation using CV result
         try:
@@ -225,11 +239,11 @@ def cal_tag_sequence_factor(args):
     fp.close()
 
 
-def adjust_tag_group_effect(ttagfile, cvfile, ttag_adj_file):
+def adjust_tag_group_effect(ttagfile, cvfile, ttag_adj_file, ncv):
     try:
         fp = open(ttagfile, 'r')
     except IOError as e:
-        logging.error("cannot open '%s' (errno=%d)", cvfile, e.errno)
+        logging.error("cannot open '%s' (errno=%d)", ttagfile, e.errno)
         sys.exit(0)
     except:
         raise
@@ -249,6 +263,21 @@ def adjust_tag_group_effect(ttagfile, cvfile, ttag_adj_file):
     elemids = elemid2tags.keys()
 
     try:
+        if not os.path.isfile(cvfile):
+            # concatenate the splitted CV result files into one
+            icvfiles = [ cvfile[:-3] + str(i+1) + ".txt" for i in range(ncv) ]
+            
+            # make sure that the CV files exist
+            if not all(map(os.path.isfile, icvfiles)):
+                logging.error("CV files do not exist. quit.")
+                sys.exit(0)
+
+            with open(cvfile, 'w') as outfile:
+                for fname in filenames:
+                    with open(fname) as icvfiles:
+                        for line in infile:
+                            outfile.write(line)
+
         fp = open(cvfile, 'r')
     except IOError as e:
         logging.error("cannot open '%s' (errno=%d)", cvfile, e.errno)
@@ -266,7 +295,7 @@ def adjust_tag_group_effect(ttagfile, cvfile, ttag_adj_file):
     fp.close()
 
     avg = lambda x: sum(x)/float(len(x))
-    global_effects = [ avg(map(lambda x: t2s[x], elemid2tags[e]))
+    global_effects = [ avg(list(map(lambda x: t2s[x], elemid2tags[e])))
             for e in elemids ]
 
     tag2ge = dict()
@@ -397,6 +426,10 @@ def main():
             help="cache memory size in MB")
     subparser_train.add_argument("-x", "--cv", type=int, default=5,
             help="x-fold cross validation for estimating effects of tags in training set")
+    subparser_train.add_argument("-i", "--icv", type=int, default=0,
+            help="run i'th x-fold cross validation only (1~x) for parallization. This only works with -S option 1 and 2.")
+    subparser_train.add_argument("-S", "--step", type=int, default=0,
+            help="run specific step only. (0:run-all(default), 1:1st CV, 2:adjust expression, 3:2nd CV, 4:build-full model, 5:score excluded tags, 6:calc. norm factors)")
     subparser_train.add_argument("-s", "--random-seeds", type=int, default=1,
             help="random seed number for reproducibility of cross-validation")
     subparser_train.add_argument("-r", "--repeats", type=int, default=1,
@@ -492,8 +525,8 @@ def main():
         dll_name = os.path.join(os.path.dirname(__file__), "libmtsa.so")
         libmtsa=CDLL(dll_name)
 
-        tdfile=c_char_p(TTAGFILE)
-        outprefix=c_char_p(args.name)
+        tdfile=c_char_p(TTAGFILE.encode('utf-8'))
+        outprefix=c_char_p(args.name.encode('utf-8'))
         nthreads = c_int(args.threads)
         rseed = c_int(args.random_seeds)
         L = c_int(args.full_word_length)
@@ -504,41 +537,60 @@ def main():
         p = c_double(args.epsilon)
         eps = c_double(args.precision)
         ncv = c_int(args.cv)
+        icv = c_int(args.icv)
         cache_size = c_double(args.cache_size)
+        adj_tdfile=c_char_p(TTAG_ADJ_FILE.encode('utf-8'))
+        outprefix_adj = c_char_p((args.name + ".adj").encode('utf-8'))
 
         libmtsa.mtsa_init(2, nthreads)
 
-        logging.info("### 1. perform initial cross-validation")
-        libmtsa.mtsa_train_main(tdfile, outprefix, rseed,
-                L, k, d, norc, Cp, p, eps, ncv, cache_size)
+        if args.step == 0 or args.step == 1:
+            logging.info("### 1. perform initial cross-validation")
+            libmtsa.mtsa_train_main(tdfile, outprefix, rseed,
+                    L, k, d, norc, Cp, p, eps, ncv, icv, cache_size)
 
-        logging.info("### 2. perform second cross-validation(s) with adjusted exprs")
+        if args.step == 0 or args.step == 2:
+            logging.info("### 2. adjusting expression based on the CV")
+            adjust_tag_group_effect(TTAGFILE, CVFILE, TTAG_ADJ_FILE, ncv)
 
-        adjust_tag_group_effect(TTAGFILE, CVFILE, TTAG_ADJ_FILE)
+        if args.step == 0 or args.step == 3:
+            logging.info("### 3. perform second cross-validation(s) with adjusted exprs")
+            if not os.path.isfile(TTAG_ADJ_FILE):
+                logging.error("%s does not exist. quit.", TTAG_ADJ_FILE)
+                sys.exit(0)
 
-        adj_tdfile=c_char_p(TTAG_ADJ_FILE)
-        logging.info("repeat cross-valiations %d time(s)", args.repeats)
-        #repeat cross validation with different random seeds
-        for i in xrange(args.repeats):
-            logging.info("repeated cross-valiation #%d", i+1)
-            outprefix_adj = c_char_p(args.name + ".adj." + str(i))
-            rseed = c_int(args.random_seeds+i)
+            logging.info("repeat cross-valiations %d time(s)", args.repeats)
+            #repeat cross validation with different random seeds
+            for i in range(args.repeats):
+                logging.info("repeated cross-valiation #%d", i+1)
+                outprefix_adj_i = c_char_p((args.name + ".adj." + str(i)).encode('utf-8'))
+                rseed = c_int(args.random_seeds+i)
+                libmtsa.mtsa_train_main(adj_tdfile, outprefix_adj_i, rseed,
+                        L, k, d, norc, Cp, p, eps, ncv, icv, cache_size)
+
+        if args.step == 0 or args.step == 4:
+            logging.info("### 4. build a model using all data")
+            if not os.path.isfile(TTAG_ADJ_FILE):
+                logging.error("%s does not exist. quit.", TTAG_ADJ_FILE)
+                sys.exit(0)
+
             libmtsa.mtsa_train_main(adj_tdfile, outprefix_adj, rseed,
-                    L, k, d, norc, Cp, p, eps, ncv, cache_size)
+                    L, k, d, norc, Cp, p, eps, 0, 0, cache_size)
 
-        logging.info("### 3. build a model using all data")
-        outprefix_adj = c_char_p(args.name + ".adj")
-        libmtsa.mtsa_train_main(adj_tdfile, outprefix_adj, rseed,
-                L, k, d, norc, Cp, p, eps, 0, cache_size)
+        if args.step == 0 or args.step == 5:
+            logging.info("### 5. score excluded tags")
+            if not os.path.isfile(MODELFILE):
+                logging.error("%s does not exist. quit.", MODELFILE)
+                sys.exit(0)
 
-        logging.info("### 4. score excluded tags")
-        testfile=c_char_p(RTAGFILE)
-        modelfile=c_char_p(MODELFILE)
-        outfile=c_char_p(RTAGSCOREFILE)
-        libmtsa.mtsa_predict_main(testfile, modelfile, outfile)
+            testfile=c_char_p(RTAGFILE.encode('utf-8'))
+            modelfile=c_char_p(MODELFILE.encode('utf-8'))
+            outfile=c_char_p(RTAGSCOREFILE.encode('utf-8'))
+            libmtsa.mtsa_predict_main(testfile, modelfile, outfile)
 
-        logging.info("### 5. calculate the sequence factor for normalization")
-        cal_tag_sequence_factor(args)
+        if args.step == 0 or args.step == 6:
+            logging.info("### 6. calculate the sequence factor for normalization")
+            cal_tag_sequence_factor(args)
 
     if args.commands == "predict":
         dll_name = os.path.join(os.path.dirname(__file__), "libmtsa.so")
@@ -549,9 +601,9 @@ def main():
 
         logging.info("### score sequences using the trained model")
 
-        testfile=c_char_p(args.input_fn)
-        modelfile=c_char_p(MODELFILE)
-        outfile=c_char_p(args.output_fn)
+        testfile=c_char_p(args.input_fn.encode('utf-8'))
+        modelfile=c_char_p(MODELFILE.encode('utf-8'))
+        outfile=c_char_p(args.output_fn.encode('utf-8'))
         libmtsa.mtsa_predict_main(testfile, modelfile, outfile)
 
     if args.commands == "normalize":
