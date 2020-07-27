@@ -21,17 +21,27 @@ cex.legend <- 1
 xrange<-c(min(orig$dsvm, mtsa$dsvm), max(orig$dsvm, mtsa$dsvm))
 yrange<-c(min(orig$mean.fc, mtsa$mean.fc), max(orig$mean.fc, mtsa$mean.fc))
 
+pval_format<-function(p) {
+	pstr<-format(p, nsmall=2, digits=2, scientific=T)
+	pstr_split<-sapply(unlist(strsplit(pstr, 'e')), as.numeric)
+	p1<-format(pstr_split[1], nsmall=1, digits=2)
+	p2<-pstr_split[2]
+	as.expression(bquote(italic(P) == .(p1) %*% 10^.(p2)))
+}
+
 plot_mfc_vs_dsvm<-function(x, title, col1, col2) {
     plot(x$dsvm, x$mean.fc, pch=20, cex=0.75, col=ifelse(x$common, col1, col2),
          xlim=xrange, ylim=yrange,
          main=title, xlab="deltaSVM score", ylab="log2(mean fold-change)")
     pc<-cor(x$mean.fc, x$dsvm)
+    pval<-cor.test(x$mean.fc, x$dsvm)$p.value
     abline(v=0, h=0, lty=2, col="gray")
     legend("topleft",
            legend=c(paste("Agree =", sum(x$dsvm*x$mean.fc>0)),
-                    paste("Disagree=", sum(x$dsvm*x$mean.fc<0)),
-                    paste("r =", format(pc, nsmall=2, digits=2))),
-            bty="n", inset=c(-0.08,-0.05), cex=cex.legend)
+                    paste("Disagree =", sum(x$dsvm*x$mean.fc<0)),
+                    paste("r =", format(pc, nsmall=2, digits=2)),
+                    pval_format(pval)),
+            bty="n", inset=c(-0.08,-0.05), cex=cex.legend, y.intersp=0.8)
 }
 
 colset1<-brewer.pal(9, 'Set1')
