@@ -34,7 +34,7 @@ If successful, You should be able to find the following library file in the curr
 
 ### Get Started
 
-The main program, mtsa.py, is written in Python 2.  It offers four main functions (build, train, predict, and normalize) as follows:
+The main program, mtsa.py, is originally written in Python 2. (UPDATE 7/27/2020: It now supports Python 3 as well!)  It offers four main functions (build, train, predict, and normalize) as follows:
 
     $ python mtsa.py --help
     usage: mtsa.py [-h] {build,train,predict,normalize} ...
