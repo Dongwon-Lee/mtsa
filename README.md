@@ -32,13 +32,42 @@ If successful, You should be able to find the following library file in the curr
 
 `make install` will simply copy this library to the `../bin` direcory
 
+### Get Started
+
+The main program, mtsa.py, is written in Python 2.  It offers four main functions (build, train, predict, and normalize) as follows:
+
+    $ python mtsa.py --help
+    usage: mtsa.py [-h] {build,train,predict,normalize} ...
+
+    perform MPRA tag sequence analysis using support vector regression (SVR) with
+    gapped-kmer kernels (Ghandi et al. 2014; Lee 2016). LIBSVM (Chang & Lin 2011)
+    was used for implementing SVR. -- by Dongwon Lee (dwlee@jhu.edu)
+
+    optional arguments:
+      -h, --help            show this help message and exit
+
+    commands:
+      {build,train,predict,normalize}
+        build               build training data for SVR
+        train               train SVR and calculate sequence factors for
+                            normalization
+        predict             score sequences using the trained SVR model
+        normalize           normalize mRNA counts
+
+The basic workflow is :
+
+  1. format the tag (barcode) count input data. Although there is no standard script for this step, you can find the Python scripts in the scripts directory used for the analysis of the four public data sets presented in the paper.
+  2. run 'mtsa.py build' to construct the appropriate training set from the input dat, by filtering low quality tags and adding flanking sequences.
+  3. run 'mtsa.py train' to learn the SVR model. This is the main step, and it can takes a while depending on the number of tags for training. 
+  4. (optional) run 'mtsa.py predict' to score tags/barcodes that wer NOT used in the training. This can also be used to calculate the SVR weights.
+  5. run 'mtsa.py normalize' to correct the sequence-specific effect of the mRNA read counts.
+
+Please refer to help messages for more detailed information for each command.
+
 ### Tutorial
 
-https://github.com/chlee-tabin/mtsa-tutorial
+We introduce the users to a basic tutorial of running `MTSA`: https://github.com/chlee-tabin/mtsa-tutorial
 
-We introduce the users to the basic workflow of `MTSA`.  Please refer to help messages 
-for more detailed information of mtsa.py.  You can access to it by running the program 
-without any argument/parameter.
-  
+
 **Please email Dongwon Lee (dongwon.lee AT childrens DOT harvard DOT edu) if you have any questions.**
 
