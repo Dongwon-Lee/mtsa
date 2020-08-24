@@ -58,7 +58,7 @@ The basic workflow is :
 
   1. format the tag (barcode) count input data. Although there is no standard script for this step, you can find the Python scripts in the scripts directory used for the analysis of the four public data sets presented in the paper.
   2. run 'mtsa.py build' to construct the appropriate training set from the input dat, by filtering low quality tags and adding flanking sequences.
-  3. run 'mtsa.py train' to learn the SVR model. This is the main step, and it can takes a while depending on the number of tags for training.
+  3. run 'mtsa.py train' to learn the SVR model. This is the main step, and it can take a while depending on the number of tags for training.
   4. (optional) run 'mtsa.py predict' to score tags that were NOT used in the training. This can also be used to calculate the SVR weights.
   5. run 'mtsa.py normalize' to correct the sequence-specific effect of the mRNA read counts.
 
