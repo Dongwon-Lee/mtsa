@@ -355,7 +355,7 @@ def main():
     desc_txt="perform MPRA tag sequence analysis using support vector regression\
     (SVR) with gapped-kmer kernels (Ghandi et al. 2014; Lee 2016). \
     LIBSVM (Chang & Lin 2011) was used for implementing SVR. \
-    -- by Dongwon Lee (dwlee@jhu.edu)"
+    -- by Dongwon Lee (dongwon.lee@childrens.harvard.edu)"
 
     desc_build_txt = "build training data for SVR "
     desc_train_txt = "train SVR and calculate sequence factors for normalization"
