@@ -5,7 +5,7 @@ import gzip
 
 def main():
     if len(sys.argv) < 2:
-        print "Usage:", sys.argv[0], "file1 [file2 [file3 ...]]"
+        print("Usage:", sys.argv[0], "file1 [file2 [file3 ...]]")
         sys.exit()
 
     elem_list = []
@@ -14,9 +14,9 @@ def main():
     first_file = True
     for fn in sys.argv[1:]:
         if fn[-2:] == "gz":
-            fp = gzip.open(fn, 'r')
+            fp = gzip.open(fn, 'rt')
         else:
-            fp = open(fn, 'r')
+            fp = open(fn, 'rt')
 
         fp.readline() # throw out header...
 
@@ -25,7 +25,7 @@ def main():
             f = line.strip().split('\t')
             elem = f[0]
             tags = f[2].split(',')
-            cnts = map(int, f[3].split(','))
+            cnts = list(map(int, f[3].split(',')))
             if first_file:
                 elem_list.append(elem)
                 tags_list.append(tags)
@@ -34,14 +34,14 @@ def main():
                 if elem != elem_list[linecnt]:
                     sys.stderr.write("ERROR: Element IDs do not match at line %d (%s =/= %s)\n" % (linecnt, elem, elem_list[linecnt]))
                     sys.exit()
-                for i in xrange(len(cnts_list[linecnt])):
+                for i in range(len(cnts_list[linecnt])):
                     cnts_list[linecnt][i] += cnts[i] 
             linecnt+=1
         fp.close()
         first_file = False
     
-    for i in xrange(len(elem_list)):
-        print '\t'.join( [ elem_list[i] ] + map(str, cnts_list[i]) )
+    for i in range(len(elem_list)):
+        print('\t'.join( [ elem_list[i] ] + list(map(str, cnts_list[i]))))
         #print '\t'.join( map(str, cnts_list[i]) )
 
 if __name__ == "__main__":
