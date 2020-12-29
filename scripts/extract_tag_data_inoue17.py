@@ -5,16 +5,16 @@ import gzip
 
 def main():
     if len(sys.argv) < 2:
-        print "Usage:", sys.argv[0], "design_file"
+        print("Usage:", sys.argv[0], "design_file")
         sys.exit()
 
     fn = sys.argv[1]
     elem_list = []
 
     if fn[-2:] == "gz":
-        fp = gzip.open(fn, 'r')
+        fp = gzip.open(fn, 'rt')
     else:
-        fp = open(fn, 'r')
+        fp = open(fn, 'rt')
 
     linecnt = 0 
     elem_list = []
@@ -35,9 +35,9 @@ def main():
         elem_tags[elemid][tagnum] = tagseq
     fp.close()
     
-    for i in xrange(len(elem_list)):
+    for i in range(len(elem_list)):
         tags = elem_tags[elem_list[i]]
-        print '\t'.join( [ elem_list[i] ] + tags )
+        print('\t'.join( [ elem_list[i] ] + tags ))
         #print '\t'.join( tags )
 
 if __name__ == "__main__":

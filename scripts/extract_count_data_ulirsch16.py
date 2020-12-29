@@ -5,7 +5,7 @@ import gzip
 
 def main():
     if len(sys.argv) != 4:
-        print "Usage:", sys.argv[0], "tag_file count_file column_name(s)"
+        print("Usage:", sys.argv[0], "tag_file count_file column_name(s)")
         sys.exit()
 
     tagfn = sys.argv[1]
@@ -21,15 +21,15 @@ def main():
 
     countfn = sys.argv[2]
     if countfn[-2:] == "gz":
-        fp = gzip.open(countfn, 'r')
+        fp = gzip.open(countfn, 'rt')
     else:
-        fp = open(countfn, 'r')
+        fp = open(countfn, 'rt')
 
     header = fp.readline().strip().split('\t')
     column_names = sys.argv[3].strip().split(',')
     column_inds = []
     for cn in column_names:
-        for hind in xrange(len(header)):
+        for hind in range(len(header)):
             if header[hind] == cn:
                 column_inds.append(hind)
                 break
@@ -73,8 +73,8 @@ def main():
         
     fp.close()
     
-    for i in xrange(len(elem_list)):
-        print '\t'.join( [ elem_list[i] ] + map(str, cnts_list[i]) )
+    for i in range(len(elem_list)):
+        print('\t'.join( [ elem_list[i] ] + list(map(str, cnts_list[i])) ))
         #print '\t'.join( map(str, cnts_list[i]) )
 
 if __name__ == "__main__":

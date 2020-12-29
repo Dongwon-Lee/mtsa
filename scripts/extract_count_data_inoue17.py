@@ -5,7 +5,7 @@ import gzip
 
 def main():
     if len(sys.argv) < 2:
-        print "Usage:", sys.argv[0], "tagfile file1 [file2 [file3 ...]]"
+        print("Usage:", sys.argv[0], "tagfile file1 [file2 [file3 ...]]")
         sys.exit()
 
     tagfn = sys.argv[1]
@@ -28,9 +28,9 @@ def main():
 
     for fn in sys.argv[2:]:
         if fn[-2:] == "gz":
-            fp = gzip.open(fn, 'r')
+            fp = gzip.open(fn, 'rt')
         else:
-            fp = open(fn, 'r')
+            fp = open(fn, 'rt')
 
         for line in fp:
             f = line.strip().split('\t')
@@ -50,8 +50,8 @@ def main():
             linecnt+=1
         fp.close()
     
-    for i in xrange(len(elem_list)):
-        print '\t'.join( [ elem_list[i] ] + map(str, cnts_list[i]) )
+    for i in range(len(elem_list)):
+        print('\t'.join( [ elem_list[i] ] + list(map(str, cnts_list[i]) )))
         #print '\t'.join( map(str, cnts_list[i]) )
 
 if __name__ == "__main__":
