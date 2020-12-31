@@ -96,7 +96,6 @@ def build_training_data(args, ttagfile, rtagfile):
 
     bad_tags = []
     num_good_tags_per_elem = []
-    log2ratio = []
     for i in range(len_dna_cnts):
         bad_tags_one_row = [True
                 if (d < args.min_dna_read_cnts) or (m == 0) else False
@@ -147,7 +146,7 @@ def build_training_data(args, ttagfile, rtagfile):
         log2ratio_i_norm = [(t, v - mean, m, d, elemid) for (t, v, m, d) in log2ratio_i]
         training_tags.extend(log2ratio_i_norm)
 
-        excluded_tags.extend([(t, elemid) for j, t in enumerate(tags[i]) if bad_i[j]])
+        excluded_tags.extend([(t, elemid) for j, t in enumerate(tags_i) if bad_i[j]])
 
     fp = open(ttagfile, 'w')
     for i in range(len(training_tags)):
@@ -158,6 +157,112 @@ def build_training_data(args, ttagfile, rtagfile):
             tag = tag + args.right_flanking_seq
         #fp.write("{0}\t{1}\t{2}\n".format(tag, training_tags[i][1], training_tags[i][2]))
         #fp.write("{0}\t{1}\t{2}\t{3}\t{4}\n".format(tag, training_tags[i][1], training_tags[i][2], training_tags[i][3], training_tags[i][4]))
+        fp.write("{0}\t{1}\t{2}\n".format(tag, training_tags[i][1], training_tags[i][4]))
+    fp.close()
+
+    logging.info("%d tags written to %s for SVR training", len(training_tags), ttagfile)
+
+    fp = open(rtagfile, 'w')
+    for i in range(len(excluded_tags)):
+        tag = excluded_tags[i][0]
+        if args.left_flanking_seq != None:
+            tag = args.left_flanking_seq + tag
+        if args.right_flanking_seq != None:
+            tag = tag + args.right_flanking_seq
+        fp.write("{0}\t{1}\n".format(tag, excluded_tags[i][1]))
+    fp.close()
+
+def read_elem_tag_cnt_data(filename):
+    try:
+        fp = open(filename, 'r')
+    except IOError as e:
+        logging.error("cannot open '%s' (errno=%d)", filename, e.errno)
+        sys.exit(0)
+    except:
+        raise
+
+    dat = {}
+    for line in fp:
+        f = line.strip().split('\t')
+        elemid = f[0]
+        if elemid not in dat:
+            dat[elemid] = {'tag':[], 'dna':[], 'rna':[]}
+            
+        dat[elemid]['tag'].append(f[1])
+        dat[elemid]['dna'].append(int(f[2]))
+        dat[elemid]['rna'].append(int(f[3]))
+
+    fp.close()
+
+    return dat
+
+def build2_training_data(args, ttagfile, rtagfile):
+    dat = read_elem_tag_cnt_data(args.input_fn)
+    
+    ntags = 0
+    nelem = 0
+    for elemid in dat.keys():
+        nelem += 1
+        ntags += len(dat[elemid]['tag'])
+
+
+    logging.info("%d elements loaded", nelem)
+    logging.info("%d tags per element (on average)", ntags/nelem)
+    logging.info("%d tags total", ntags)
+
+    n_bad_tags = 0
+    n_good_elem = 0
+    n_good_tags_in_bad_elems = 0
+    for elemid in dat.keys():
+        dat[elemid]['is_bad_tag'] = [ True
+                if (d < args.min_dna_read_cnts) or (m == 0) else False
+                for (d, m) in zip(dat[elemid]['dna'], dat[elemid]['rna'])]
+        n_bad_tags += dat[elemid]['is_bad_tag'].count(True)
+
+        if dat[elemid]['is_bad_tag'].count(False) >= args.min_num_tags:
+            dat[elemid]['is_good_elem'] = True
+            n_good_elem += 1
+        else:
+            dat[elemid]['is_good_elem'] = False
+            n_good_tags_in_bad_elems += dat[elemid]['is_bad_tag'].count(False)
+
+    logging.info("%d tags with <%d DNA reads or 0 mRNA reads (excluded)",
+            n_bad_tags, args.min_dna_read_cnts)
+
+    logging.info("%d elements have <%d tags after filtering",
+            len(dat)-n_good_elem, args.min_num_tags)
+
+    logging.info("%d tags are additionally excluded",
+            n_good_tags_in_bad_elems)
+
+    training_tags = []
+    excluded_tags = []
+    for elemid in dat.keys():
+        if not dat[elemid]['is_good_elem']:
+            excluded_tags.extend([(t, elemid) for t in dat[elemid]['tag']])
+            continue
+
+        tags_i = dat[elemid]['tag']
+        mrna_i = dat[elemid]['rna']
+        dna_i = dat[elemid]['dna']
+        bad_i = dat[elemid]['is_bad_tag']
+
+        log2ratio_i = [ (t, math.log(m/float(d), 2), m, d)
+                for j, (t, m, d) in enumerate(zip(tags_i, mrna_i, dna_i))
+                if not bad_i[j] ]
+        mean = sum([v for (t, v, m, d) in log2ratio_i])/float(len(log2ratio_i))
+        log2ratio_i_norm = [(t, v - mean, m, d, elemid) for (t, v, m, d) in log2ratio_i]
+        training_tags.extend(log2ratio_i_norm)
+
+        excluded_tags.extend([(t, elemid) for j, t in enumerate(tags_i) if bad_i[j]])
+
+    fp = open(ttagfile, 'w')
+    for i in range(len(training_tags)):
+        tag = training_tags[i][0]
+        if args.left_flanking_seq != None:
+            tag = args.left_flanking_seq + tag
+        if args.right_flanking_seq != None:
+            tag = tag + args.right_flanking_seq
         fp.write("{0}\t{1}\t{2}\n".format(tag, training_tags[i][1], training_tags[i][4]))
     fp.close()
 
@@ -358,6 +463,7 @@ def main():
     -- by Dongwon Lee (dongwon.lee@childrens.harvard.edu)"
 
     desc_build_txt = "build training data for SVR "
+    desc_build2_txt = "build training data for SVR using an input file in a element-tag-count format"
     desc_train_txt = "train SVR and calculate sequence factors for normalization"
     desc_predict_txt = "score sequences using the trained SVR model"
     desc_normalize_txt = "normalize mRNA counts"
@@ -370,6 +476,11 @@ def main():
     subparser_build = subparsers.add_parser('build',
             help=desc_build_txt,
             description=desc_build_txt,
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    subparser_build2 = subparsers.add_parser('build2',
+            help=desc_build2_txt,
+            description=desc_build2_txt,
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     subparser_train = subparsers.add_parser('train',
@@ -403,6 +514,20 @@ def main():
     subparser_build.add_argument("-l", "--left-flanking-seq", type=str, default=None,
             help="left flanking sequence (5') of tags for SVR training")
     subparser_build.add_argument("-r", "--right-flanking-seq", type=str, default=None,
+            help="right flanking sequence (3') of tags for SVR training")
+
+    # parser for the "build2" command
+    subparser_build2.add_argument("input_fn", type=str,
+            help="barcode counts file in a element-tag-count format")
+    subparser_build2.add_argument("-n", "--name", type=str, required=True,
+            help="name of output prefix. REQUIRED")
+    subparser_build2.add_argument("-m", "--min-dna-read-cnts", type=int, default=200,
+            help="minimum DNA tag read counts for SVR training")
+    subparser_build2.add_argument("-t", "--min-num-tags", type=int, default=5,
+            help="minimum number of tags per element for SVR training")
+    subparser_build2.add_argument("-l", "--left-flanking-seq", type=str, default=None,
+            help="left flanking sequence (5') of tags for SVR training")
+    subparser_build2.add_argument("-r", "--right-flanking-seq", type=str, default=None,
             help="right flanking sequence (3') of tags for SVR training")
 
     # parser for the "train" command
@@ -482,6 +607,13 @@ def main():
         HEADER += "\n#   LEFT_FLANKING_SEQ={0}".format(args.left_flanking_seq)
         HEADER += "\n#   RIGHT_FLANKING_SEQ={0}".format(args.right_flanking_seq)
 
+    if args.commands == "build2":
+        HEADER += "\n#   EXP_NAME={0}".format(args.name)
+        HEADER += "\n#   MIN_DNA_READ_CNTS={0}".format(args.min_dna_read_cnts)
+        HEADER += "\n#   MIN_NUM_TAGS={0}".format(args.min_num_tags)
+        HEADER += "\n#   LEFT_FLANKING_SEQ={0}".format(args.left_flanking_seq)
+        HEADER += "\n#   RIGHT_FLANKING_SEQ={0}".format(args.right_flanking_seq)
+
     if args.commands == "train":
         HEADER += "\n#   EXP_NAME={0}".format(args.name)
         HEADER += "\n#   FULL_WORD_LENGTH={0}".format(args.full_word_length)
@@ -519,6 +651,10 @@ def main():
     if args.commands == "build":
         logging.info("### build training data")
         build_training_data(args, TTAGFILE, RTAGFILE)
+
+    if args.commands == "build2":
+        logging.info("### build training data")
+        build2_training_data(args, TTAGFILE, RTAGFILE)
 
     if args.commands == "train":
         # assuming that libmtsa.so is in the same directory as mtsa.py

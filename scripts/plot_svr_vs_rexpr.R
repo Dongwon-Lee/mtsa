@@ -48,4 +48,5 @@ legend("topleft",
                 paste("n =", format(nrow(df), big.mark=","))),
         bty="n", inset=c(-0.1, 0), cex=cex.legend)
 
+print(pc)
 dev.off()
