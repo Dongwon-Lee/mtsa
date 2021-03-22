@@ -36,7 +36,7 @@ __version__ = '1.0.0'
 HEADER  = "\n# ======================================="
 HEADER += "\n#   MPRA Tag Sequence Analysis (MTSA)"
 HEADER += "\n#   Version {0}".format(__version__)
-HEADER += "\n#   (C) 2017 Dongwon Lee"
+HEADER += "\n#   (C) 2020 Dongwon Lee"
 HEADER += "\n#   GNU General Public License v3"
 HEADER += "\n# ======================================="
 
@@ -454,6 +454,45 @@ def normalize_mrna_counts(args):
         fp.write("\n")
     fp.close()
 
+def normalize2_mrna_counts(args):
+    seqfactfile = args.name + ".sequence_factor.txt"
+    tag2norm = dict()
+
+    fp = open(seqfactfile, 'r')
+    for line in fp:
+        f = line.strip().split('\t')
+        tag = f[0]
+        norm = pow(2, float(f[1]))
+        tag2norm[tag] = norm
+    fp.close()
+
+    try:
+        fp_in = open(args.input_fn, 'r')
+    except IOError as e:
+        logging.error("cannot open '%s' (errno=%d)", args.input_fn, e.errno)
+        sys.exit(0)
+    except:
+        raise
+
+    fp_out = open(args.output_fn, 'w')
+
+    for line in fp_in:
+        f = line.strip().split('\t')
+        elemid = f[0]
+        tag = f[1]
+        dna = int(f[2])
+        rna = int(f[3])
+
+        tag_flank = tag
+        if args.left_flanking_seq != None:
+            tag_flank = args.left_flanking_seq + tag_flank
+        if args.right_flanking_seq != None:
+            tag_flank = tag_flank + args.right_flanking_seq
+        fp_out.write("{0}\t{1}\t{2}\t{3}\n".format(elemid, tag, dna, rna/tag2norm[tag_flank]))
+
+    fp_out.close()
+    fp_in.close()
+
 def main():
     global HEADER
 
@@ -467,6 +506,7 @@ def main():
     desc_train_txt = "train SVR and calculate sequence factors for normalization"
     desc_predict_txt = "score sequences using the trained SVR model"
     desc_normalize_txt = "normalize mRNA counts"
+    desc_normalize2_txt = "normalize mRNA counts using an input file in a element-tag-count format"
 
     parser = argparse.ArgumentParser(description=desc_txt,
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -496,6 +536,11 @@ def main():
     subparser_normalize = subparsers.add_parser('normalize',
             help=desc_normalize_txt,
             description=desc_normalize_txt,
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    
+    subparser_normalize2 = subparsers.add_parser('normalize2',
+            help=desc_normalize2_txt,
+            description=desc_normalize2_txt,
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     # parser for the "build" command
@@ -587,6 +632,19 @@ def main():
             help="left flanking sequence (5') of tags used for SVR training")
     subparser_normalize.add_argument("-r", "--right-flanking-seq", type=str, default=None,
             help="right flanking sequence (3') of tags used for SVR training")
+
+    # parser for the "normalize2" command
+    subparser_normalize2.add_argument("input_fn", type=str,
+            help="barcode counts file in a element-tag-count format")
+    subparser_normalize2.add_argument("output_fn", type=str,
+            help="output file name for normalized mRNA read counts")
+
+    subparser_normalize2.add_argument("-n", "--name", type=str, required=True,
+            help="name of output prefix. REQUIRED")
+    subparser_normalize2.add_argument("-l", "--left-flanking-seq", type=str, default=None,
+            help="left flanking sequence (5') of tags for SVR training")
+    subparser_normalize2.add_argument("-r", "--right-flanking-seq", type=str, default=None,
+            help="right flanking sequence (3') of tags for SVR training")
 
     args = parser.parse_args()
 
@@ -745,6 +803,10 @@ def main():
     if args.commands == "normalize":
         logging.info("### normalize mRNA count data")
         normalize_mrna_counts(args)
+
+    if args.commands == "normalize2":
+        logging.info("### normalize mRNA count data")
+        normalize2_mrna_counts(args)
 
 if __name__=='__main__':
     main()

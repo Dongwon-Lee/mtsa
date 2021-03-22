@@ -24,7 +24,7 @@ ${MTSA} build -m 500 -t 5 -l CTAGA -r AGATC -n ${EXPNAME}\
     ${OUTDIR}/dna_tr.txt ${OUTDIR}/mrna_tr.txt ${OUTDIR}/tag_tr.txt
 
 # model training with default parameter
-${MTSA} train -n ${EXPNAME}
+${MTSA} train -T 4 -M 8000 -n ${EXPNAME}
 
 # predicting effects of the held-out tags
 ${MTSA} predict -T 4 -n ${EXPNAME} ${OUTDIR}/tags_col1.txt ${OUTDIR}/tags_col1_score.txt

@@ -23,8 +23,8 @@ d6<-read.table("Inoue2017/processed/mtsa_ino17_wt.m50.t10.e5.8mers.txt",stringsA
 d7<-read.table("Mogno2013/processed/mtsa_mog13.t4.e0.8mers.txt",stringsAsFactors=F)
 d8<-read.table("Ernst2016/processed/mtsa_ern16.m2000.t5.e5.8mers.txt", stringsAsFactors=F)
 d9<-read.table("Ernst2016/processed/mtsa_ern16_k562.m2000.t5.e5.8mers.txt", stringsAsFactors=F)
-d10<-read.table("Tewhey2016/processed/mtsa_tew16_rpm1_t10.8mers.txt", stringsAsFactors=F)
-d11<-read.table("Tewhey2016/processed/mtsa_tew16_NA19239_rpm1_t10.8mers.txt", stringsAsFactors=F)
+d10<-read.table("Tewhey2016/processed/mtsa_tew16.m60.t10.8mers.txt", stringsAsFactors=F)
+d11<-read.table("Tewhey2016/processed/mtsa_tew16_NA19239.m60.t10.8mers.txt", stringsAsFactors=F)
 
 colnames(d1)<-c("kmer", "Mel12")
 colnames(d2)<-c("kmer", "Khe13")

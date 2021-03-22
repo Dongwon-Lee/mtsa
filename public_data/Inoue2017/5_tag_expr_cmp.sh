@@ -25,7 +25,7 @@ ${MTSA} build -m 50 -t 10 -l AATTC -r CATTG -n ${EXPNAME}\
     ${OUTDIR}/dna_tr.txt ${OUTDIR}/mrna_tr.txt ${OUTDIR}/tag_tr.txt
 
 # training
-${MTSA} train -T 4 -M 2048 -n ${EXPNAME}
+${MTSA} train -T 4 -M 8000 -n ${EXPNAME}
 
 # predicting effects of the held-out tags
 ${MTSA} predict -T 4 -n ${EXPNAME} ${OUTDIR}/tags_col1.txt ${OUTDIR}/tags_col1_score.txt

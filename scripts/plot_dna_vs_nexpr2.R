@@ -9,8 +9,8 @@ out_fn<-args[2]
 
 wd <- 2
 ht <- 1.5
-fig.nrows <- 3
-fig.ncols <- 1
+fig.nrows <- 1
+fig.ncols <- 3
 pt <- 8
 cex.general <- 1
 cex.lab <- 1
@@ -54,7 +54,7 @@ plot_plasmid_expr<-function(dna_rna_cnt_fn, titletxt, expr_threshold=1) {
     res<-data.frame(plasmid=dat$dna, expr=dat$rexpr)
 
     cutoff_res<-c()
-    cutoffs<-c(1,50,100,150,200,500,1000,2000,5000,10000,20000,50000,100000,200000,500000)
+    cutoffs<-c(50,60,70,80,90,100,200)
     ranges.txt<-c()
     for(i in 1:(length(cutoffs)-1)) {
         res.subset<-subset(res, res$plasmid>=cutoffs[i] & res$plasmid<cutoffs[i+1])
@@ -96,6 +96,6 @@ plot_plasmid_expr<-function(dna_rna_cnt_fn, titletxt, expr_threshold=1) {
 
 }
 
-pdf(out_fn, width=1.8, height=4.25)
+pdf(out_fn, width=5.4, height=1.5)
 plot_plasmid_expr(dna_rna_cnt_fn, "")
 dev.off()

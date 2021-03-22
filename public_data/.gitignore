@@ -1,3 +1,4 @@
 8mers.txt
 main_fig2abc.pdf
 pairwise_scatterplot_kmerweights.pdf
+*/slurm-*.out

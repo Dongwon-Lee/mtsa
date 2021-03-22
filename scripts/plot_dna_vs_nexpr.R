@@ -8,8 +8,8 @@ out_fn<-args[3]
 
 wd <- 2
 ht <- 1.5
-fig.nrows <- 3
-fig.ncols <- 1
+fig.nrows <- 1
+fig.ncols <- 3
 pt <- 8
 cex.general <- 1
 cex.lab <- 1
@@ -93,6 +93,6 @@ plot_plasmid_expr<-function(plasmid_fn, mrna_fn, titletxt, expr_threshold=1) {
 
 }
 
-pdf(out_fn, width=1.8, height=4.25)
+pdf(out_fn, width=5.4, height=1.5)
 plot_plasmid_expr(plasmid_cnt_fn, mrna_cnt_fn, "")
 dev.off()
