@@ -2,7 +2,7 @@
 
 MTSA is a sequence-based analysis for estimating tag sequence effects on 
 gene expression in massively parallele reporter assay (MPRA) experiment.
-It trains a support vector regression (SVR) using gapped-kmer kernels
+It trains a support vector regression (SVR) using gapped-kmer kernels (gkm-kernels)
 (Ghandi et al., 2014; Lee, 2016), and learns sequence features that modulate
 gene expressions. We use LIBSVM (Chang & Lin 2011) for implementing SVR.
 
@@ -12,12 +12,14 @@ gene expressions. We use LIBSVM (Chang & Lin 2011) for implementing SVR.
 
 * Chang C.-C and Lin C.-J. LIBSVM : a library for support vector machines. ACM Transactions on Intelligent Systems and Technology, 2:27:1--27:27, 2011.
 
+Note: SVR with gkm-kernels is a generalizable method. We implemented a general purpose gkm-SVR in LS-GKM (https://github.com/Dongwon-Lee/lsgkm). 
+
 ### Citation
 
 *Please cite the following paper if you use MTSA in your research:*
 
-* Lee D†, Kapoor A, Lee C, Mudgett M, Beer MA, Chakravarti A†. Improved identification of functional regulatory variants from massively parallel
-reporter assays by sequence correction of DNA tag bias - *submitted* *† Co-corresponding authors*
+* Lee D†, Kapoor A, Lee C, Mudgett M, Beer MA, Chakravarti A. Improved identification of functional regulatory variants from massively parallel
+reporter assays by sequence correction of DNA tag bias - *submitted* *† Corresponding authors*
 
 ### Installation
 
