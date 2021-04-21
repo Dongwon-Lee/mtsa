@@ -502,16 +502,16 @@ def main():
     -- by Dongwon Lee (dongwon.lee@childrens.harvard.edu)"
 
     desc_build_txt = "build training data for SVR "
-    desc_build2_txt = "build training data for SVR using an input file in a element-tag-count format"
+    desc_build2_txt = "build training data for SVR using an input file in a tsv format ([element] [tag] [DNA] [RNA])"
     desc_train_txt = "train SVR and calculate sequence factors for normalization"
     desc_predict_txt = "score sequences using the trained SVR model"
     desc_normalize_txt = "normalize mRNA counts"
-    desc_normalize2_txt = "normalize mRNA counts using an input file in a element-tag-count format"
+    desc_normalize2_txt = "normalize mRNA counts using an input file in a tsv format ([element] [tag] [DNA] [RNA])"
 
     parser = argparse.ArgumentParser(description=desc_txt,
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    subparsers = parser.add_subparsers(title='commands', dest='commands')
+    subparsers = parser.add_subparsers(title='commands', dest='commands', required=True)
 
     subparser_build = subparsers.add_parser('build',
             help=desc_build_txt,

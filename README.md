@@ -36,33 +36,39 @@ If successful, You should be able to find the following library file in the curr
 
 ### Get Started
 
-The main program, mtsa.py, is originally written in Python 2. (UPDATE 7/27/2020: It now supports Python 3 as well!)  It offers four main functions (build, train, predict, and normalize) as follows:
+The main program, mtsa.py, is originally written in Python 2. (UPDATE 7/27/2020: It now supports Python 3 as well!) 
+It offers four main functions (build/build2, train, predict, and normalize/normalize2) as follows:
 
-    $ python mtsa.py --help
-    usage: mtsa.py [-h] {build,train,predict,normalize} ...
+    $ bin/mtsa.py  -h
+    usage: mtsa.py [-h] {build,build2,train,predict,normalize,normalize2} ...
 
     perform MPRA tag sequence analysis using support vector regression (SVR) with
     gapped-kmer kernels (Ghandi et al. 2014; Lee 2016). LIBSVM (Chang & Lin 2011)
-    was used for implementing SVR. -- by Dongwon Lee (dwlee@jhu.edu)
+    was used for implementing SVR. -- by Dongwon Lee
+    (dongwon.lee@childrens.harvard.edu)
 
     optional arguments:
       -h, --help            show this help message and exit
 
     commands:
-      {build,train,predict,normalize}
+      {build,build2,train,predict,normalize,normalize2}
         build               build training data for SVR
+        build2              build training data for SVR using an input file in a
+                            tsv format ([element] [tag] [DNA] [RNA])
         train               train SVR and calculate sequence factors for
                             normalization
         predict             score sequences using the trained SVR model
         normalize           normalize mRNA counts
+        normalize2          normalize mRNA counts using an input file in a tsv
+                            format ([element] [tag] [DNA] [RNA])
 
 The basic workflow is :
 
-  1. format the tag (barcode) count input data. Although there is no standard script for this step, you can find the Python scripts in the scripts directory used for the analysis of the four public data sets presented in the paper.
-  2. run 'mtsa.py build' to construct the appropriate training set from the input dat, by filtering low quality tags and adding flanking sequences.
+  1. format the tag (barcode) count input data. Although there is no standard script for this step, you can find the Python scripts in the scripts directory used for the analysis of public data sets presented in the paper.
+  2. run 'mtsa.py build/build2' to construct the appropriate training set from the input data, by filtering low quality tags and adding flanking sequences.
   3. run 'mtsa.py train' to learn the SVR model. This is the main step, and it can take a while depending on the number of tags for training.
   4. (optional) run 'mtsa.py predict' to score tags that were NOT used in the training. This can also be used to calculate the SVR weights.
-  5. run 'mtsa.py normalize' to correct the sequence-specific effect of the mRNA read counts.
+  5. run 'mtsa.py normalize/normalize2' to correct the sequence-specific effect of the mRNA read counts.
 
 Please refer to help messages for more detailed information for each command.
 
