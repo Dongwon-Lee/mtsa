@@ -19,7 +19,7 @@ Note: SVR with gkm-kernels is a generalizable method. We implemented a general p
 *Please cite the following paper if you use MTSA in your research:*
 
 * Lee D†, Kapoor A, Lee C, Mudgett M, Beer MA, Chakravarti A. Improved identification of functional regulatory variants from massively parallel
-reporter assays by sequence correction of DNA tag bias - *submitted* *† Corresponding authors*
+reporter assays by sequence correction of DNA tag bias - *submitted* *† Corresponding author*
 
 ### Installation
 
