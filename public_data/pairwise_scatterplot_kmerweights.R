@@ -25,6 +25,7 @@ d8<-read.table("Ernst2016/processed/mtsa_ern16.m2000.t5.e5.8mers.txt", stringsAs
 d9<-read.table("Ernst2016/processed/mtsa_ern16_k562.m2000.t5.e5.8mers.txt", stringsAsFactors=F)
 d10<-read.table("Tewhey2016/processed/mtsa_tew16.m60.t10.8mers.txt", stringsAsFactors=F)
 d11<-read.table("Tewhey2016/processed/mtsa_tew16_NA19239.m60.t10.8mers.txt", stringsAsFactors=F)
+d12<-read.table("Kwasnieski2014/processed/mtsa_kwa14.t4.e5.8mers.txt", stringsAsFactors=F)
 
 colnames(d1)<-c("kmer", "Mel12")
 colnames(d2)<-c("kmer", "Khe13")
@@ -38,6 +39,7 @@ colnames(d8)<-c("kmer", "Ern16")
 colnames(d9)<-c("kmer", "Ern16K")
 colnames(d10)<-c("kmer", "Tew16")
 colnames(d11)<-c("kmer", "Tew16N")
+colnames(d12)<-c("kmer", "Kwa14")
 
 d<-merge(d1, d2)
 d<-merge(d, d2k)
@@ -50,20 +52,24 @@ d<-merge(d, d8)
 d<-merge(d, d9)
 d<-merge(d, d10)
 d<-merge(d, d11)
+d<-merge(d, d12)
 
+# reorder
 dat<-d[,c("Mel12",
           "Khe13", "Khe13K",  
           "Ern16", "Ern16K",
           "Uli16", "Uli16G",
           "Tew16", "Tew16N",
-          "Ino17", "Ino17WT", "Mog13")]
+          "Ino17", "Ino17WT",
+          "Mog13", "Kwa14")]
 
-colnames(dat)<-c("L1_HEK293_M",
-                 "L1_HepG2_K", "L1_K562_K",
-                 "L1_HepG2_E", "L1_K562_E",
-                 "L1_K562_U", "L1_K562.G_U",  
-                 "L2_LCL1_T", "L2_LCL2_T",
-                 "L3_HepG2.M_I", "L3_HepG2.W_I", "L3_Yeast_M")
+colnames(dat)<-c("Mel12_HEK293",
+                 "Khe13_HepG2", "Khe13_K562",
+                 "Ern16_HepG2", "Ern16_K562",
+                 "Uli16_K562", "Uli16_K562_G",
+                 "Tew16_LCL1", "Tew16_LCL2",
+                 "Ino17_HepG2_M", "Ino17_HepG2_W",
+                 "Mog13_Y", "Kwa14_K562")
 
 outfn<-"pairwise_scatterplot_kmerweights.pdf"
 pdf(outfn, width=wd*fig.ncols, height=ht*fig.nrows)
