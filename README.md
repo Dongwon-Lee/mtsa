@@ -1,6 +1,6 @@
 ## MTSA: MPRA Tag Sequence Analysis
 
-Version 0.1.0 Last edited: April 21, 2021, (c) Dongwon Lee
+Version 1.0.0 Last edited: April 21, 2021, (c) Dongwon Lee
 
 MTSA is a sequence-based analysis for estimating tag sequence effects on 
 gene expression in massively parallele reporter assay (MPRA) experiment.
