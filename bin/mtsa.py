@@ -511,7 +511,10 @@ def main():
     parser = argparse.ArgumentParser(description=desc_txt,
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    subparsers = parser.add_subparsers(title='commands', dest='commands', required=True)
+    if sys.version_info >= (3, 7):
+        subparsers = parser.add_subparsers(title='commands', dest='commands', required=True)
+    else:
+        subparsers = parser.add_subparsers(title='commands', dest='commands')
 
     subparser_build = subparsers.add_parser('build',
             help=desc_build_txt,
