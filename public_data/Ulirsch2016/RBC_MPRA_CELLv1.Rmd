@@ -1,0 +1,2055 @@
+---
+title: "Systematic Functional Dissection of Common Genetic Variation Affecting Red Blood Cell Traits"
+output: html_document
+---
+
+<br></br>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Scripts to reproduce the analyses presented in:
+
+Jacob C. Ulirsch, Satish K. Nandakumar, Li Wang, Felix C. Giani, Xiaolan Zhang, Peter Rogov, Alexandre Melnikov, Patrick McDonel, Ron Do, Tarjei S. Mikkelsen, and Vijay G. Sankaran. Systematic Functional Dissection of Common Genetic Variation Affecting Red Blood Cell Traits. Cell, June 2 2016.
+
+Please contact julirsch AT broadinstitute DOT org if you have any questions or comments. As MPRA is an evolving technology and there are a number of analysis choices, we welcome feedback and suggestions for improvement.
+<br></br><br></br><br></br><br></br>
+
+```{r, echo=FALSE, message=FALSE}
+#Load required libraries
+library(readr)
+library(gplots)
+library(ggplot2)
+library(reshape2)
+library(qvalue)
+library(preprocessCore)
+library(ggdendro)
+library(GGally)
+library(ggthemes)
+library(plyr)
+library(betareg)
+library(corrplot)
+library(vioplot)
+library(fBasics)
+library(Hmisc)
+```
+
+Set directory to location of the downloaded data:
+```{r, echo=TRUE}
+dir="/Users/julirsch/Desktop/data/"
+```
+
+<br></br>
+Read in raw barcode count data for MPRA:
+```{r, echo=TRUE}
+MPRA <-
+  data.frame(read_delim(
+  file = paste0(dir, "Raw/", "RBC_MPRA_minP_raw.txt"),
+  delim = "\t",
+  col_names = T,
+  col_types = cols(chr = "c")
+  ))
+```
+
+<br></br>
+Remove modified constructs (due to restriction enzyme cut sites):
+```{r, echo=TRUE}
+MPRA <- subset(MPRA, clean == "var")
+```
+
+<br></br>
+Combine plasmid counts from both replicates:
+```{r, echo=TRUE}
+MPRA <-
+  as.data.frame(append(
+  MPRA,
+  list(K562_minP_DNA = MPRA$K562_minP_DNA1 + MPRA$K562_minP_DNA2),
+  after = 13
+  ))
+```
+
+<br></br>
+Normalize counts to counts per million (CPM):
+```{r, echo=TRUE}
+for (i in 12:length(MPRA)) {
+  MPRA[, i] <- (MPRA[, i] + 1) / 1000000 * sum(MPRA[, i])
+  }
+```
+
+<br></br>
+Correlate normalized barcode counts and correlate summed barcode counts:
+```{r, echo=TRUE, fig.width=7, fig.height=6}
+corrplot(cor(MPRA[, 12:24]), method = "number", number.cex = 0.7)
+```
+
+<br></br>
+Correlate summed normalized barcode counts:
+```{r, echo=TRUE, fig.width=7, fig.height=6}
+MPRAsum <- ddply(MPRA[, 11:24], .(byallele), numcolwise(sum))
+corrplot(cor(MPRAsum[, 2:14]), method = "number", number.cex = 0.7)
+```
+
+<br></br>
+Remove multi-allelic variants:
+```{r, echo=TRUE}
+MPRA <- MPRA[!(MPRA$pos %in% c(2519416, 43842618, 46046134)), ]
+#Exclude Duffy variant as well
+MPRA <- MPRA[!(MPRA$pos %in% c(159174683)),]
+```
+
+<br></br>
+Log2(x+1) normalize and plot DNA barcode density <b>(Figure 1B)</b>:
+```{r, echo=TRUE}
+MPRA[(length(MPRA) + 1):(length(MPRA) + length(MPRA[, 12:length(MPRA)]))] <-
+  log(MPRA[, 12:(length(MPRA))], 2)
+plot(density(MPRA$K562_minP_DNA.1), main = "Kernel density for DNA barcodes")
+```
+
+<br></br>
+Keep only barcodes with minimum log2(CPM+1) determined from density plot:
+```{r, echo=TRUE}
+MPRA_minP <- MPRA[MPRA$K562_minP_DNA.1 >= 8,]
+print(c("Percent of barcodes remaining: ", (dim(MPRA_minP) / dim(MPRA))[1]))
+```
+
+<br></br>
+Calculate and plot mRNA barcode correlations across replicates prior to normalization (Note that reproducibility is better when summing/collapsing barcodes but we show for individual barcodes here; also note that we would benefit by normalizing the unavoidable variance for lowly expressed barcodes):
+```{r, echo=TRUE, fig.width=5, fig.height=5}
+CTRL_RNA_reps <- MPRA_minP[, 28:33]
+max00 <- as.vector(quantile(as.matrix(CTRL_RNA_reps), c(0.0)))
+max50 <- as.vector(quantile(as.matrix(CTRL_RNA_reps), c(0.5)))
+CTRL_RNA_reps.cor00 <-
+cor(CTRL_RNA_reps[apply(CTRL_RNA_reps, MARGIN = 1, function(x)
+min(x) > max00),])
+CTRL_RNA_reps.cor50 <-
+cor(CTRL_RNA_reps[apply(CTRL_RNA_reps, MARGIN = 1, function(x)
+min(x) > max50),]) #Quick way to only check high mRNA counts
+GATA1_RNA_reps <- MPRA_minP[, 34:37]
+max00 <- as.vector(quantile(as.matrix(GATA1_RNA_reps), c(0.0)))
+max50 <- as.vector(quantile(as.matrix(GATA1_RNA_reps), c(0.5)))
+GATA1_RNA_reps.cor00 <-
+cor(GATA1_RNA_reps[apply(GATA1_RNA_reps, MARGIN = 1, function(x)
+all(x > max00)),])
+GATA1_RNA_reps.cor50 <-
+cor(GATA1_RNA_reps[apply(GATA1_RNA_reps, MARGIN = 1, function(x)
+all(x > max50)),]) #Quick way to only check high mRNA counts
+plot(
+MPRA_minP$K562_CTRL_minP_RNA1.1,
+MPRA_minP$K562_CTRL_minP_RNA2.1,
+pch = 20,
+xlim = c(0, 20),
+ylim = c(0, 20),
+main = "Example mRNA count plot for two replicates",
+ylab = "Replicate 2",
+xlab = "Replicate 1"
+)
+boxplot(
+CTRL_RNA_reps.cor00[upper.tri(CTRL_RNA_reps.cor00)],
+CTRL_RNA_reps.cor50[upper.tri(CTRL_RNA_reps.cor50)],
+GATA1_RNA_reps.cor00[upper.tri(GATA1_RNA_reps.cor00)],
+GATA1_RNA_reps.cor50[upper.tri(GATA1_RNA_reps.cor50)],
+ylim = c(0, 1),
+las = 2,
+names = c("K562 All", "K562 50%", "K562+G All", "K562+G 50%"),
+cex.axis = 0.8,
+ylab = "Pearson's R",
+main = "Average mRNA correlations across all replicates"
+)
+```
+
+<br></br>
+Define activity [log2(mRNA/DNA) = log2(mRNA) - log2(DNA)]:
+```{r, echo=TRUE}
+attach(MPRA_minP)
+MPRA_minP$K562_CTRL_RATIO_R1 <-
+K562_CTRL_minP_RNA1.1 - K562_minP_DNA.1
+MPRA_minP$K562_CTRL_RATIO_R2 <-
+K562_CTRL_minP_RNA2.1 - K562_minP_DNA.1
+MPRA_minP$K562_CTRL_RATIO_R3 <-
+K562_CTRL_minP_RNA3.1 - K562_minP_DNA.1
+MPRA_minP$K562_CTRL_RATIO_R4 <-
+K562_CTRL_minP_RNA4.1 - K562_minP_DNA.1
+MPRA_minP$K562_CTRL_RATIO_R5 <-
+K562_CTRL_minP_RNA5.1 - K562_minP_DNA.1
+MPRA_minP$K562_CTRL_RATIO_R6 <-
+K562_CTRL_minP_RNA6.1 - K562_minP_DNA.1
+MPRA_minP$K562_GATA1_RATIO_R1 <-
+K562_GATA1_minP_RNA1.1 - K562_minP_DNA.1
+MPRA_minP$K562_GATA1_RATIO_R2 <-
+K562_GATA1_minP_RNA2.1 - K562_minP_DNA.1
+MPRA_minP$K562_GATA1_RATIO_R3 <-
+K562_GATA1_minP_RNA3.1 - K562_minP_DNA.1
+MPRA_minP$K562_GATA1_RATIO_R4 <-
+K562_GATA1_minP_RNA4.1 - K562_minP_DNA.1
+detach(MPRA_minP)
+```
+
+<br></br>
+Quantile normalize activities, set median to 0, check, and combine replicates in separate DF:
+```{r, echo=TRUE}
+temp <- normalize.quantiles(as.matrix(MPRA_minP[, 38:47]))
+temp <- temp - median(temp)
+MPRA_minP.melt <-
+melt(
+MPRA_minP[c(
+"chr",
+"pos",
+"ref",
+"alt",
+"type",
+"bot",
+"top",
+"clean",
+"oligo",
+"construct",
+"byallele",
+"K562_CTRL_RATIO_R1",
+"K562_CTRL_RATIO_R2",
+"K562_CTRL_RATIO_R3",
+"K562_CTRL_RATIO_R4",
+"K562_CTRL_RATIO_R5",
+"K562_CTRL_RATIO_R6",
+"K562_GATA1_RATIO_R1",
+"K562_GATA1_RATIO_R2",
+"K562_GATA1_RATIO_R3",
+"K562_GATA1_RATIO_R4"
+)],
+id = c(
+"chr",
+"pos",
+"ref",
+"alt",
+"type",
+"bot",
+"top",
+"clean",
+"oligo",
+"construct",
+"byallele"
+)
+)
+MPRA_minP.melt$value <- melt(temp[, 1:10])$value
+boxplot(
+value ~ variable,
+MPRA_minP.melt,
+las = 2,
+cex.axis = 0.4,
+yaxt = "n",
+main = "Quantile normalized activities",
+ylab = "Activity (mRNA/DNA)"
+)
+axis(2, cex = 1.5)
+```
+
+<br></br>
+Derive activity estimates by collapsing barcodes and taking the median:
+```{r, echo=TRUE}
+CTRL.temp <- MPRA_minP.melt[grep("CTRL", MPRA_minP.melt$variable),]
+CTRL.value <-
+tapply(CTRL.temp$value, factor(CTRL.temp$byallele), median)
+GATA1.temp <-
+MPRA_minP.melt[grep("GATA1", MPRA_minP.melt$variable),]
+GATA1.value <-
+tapply(GATA1.temp$value, factor(GATA1.temp$byallele), median)
+RATIO.temp <-
+MPRA_minP.melt[!duplicated(MPRA_minP.melt$byallele),!(names(MPRA_minP.melt) %in% c("value", "variable"))]
+MPRA_minP.ratio <-
+merge(RATIO.temp,
+data.frame(byallele = names(CTRL.value), CTRL.median = CTRL.value),
+by = "byallele")
+MPRA_minP.ratio <-
+merge(MPRA_minP.ratio,
+data.frame(byallele = names(GATA1.value), GATA1.median = GATA1.value),
+by = "byallele")
+```
+
+<br></br>
+Calculate activity correlations:
+```{r, echo=TRUE}
+CTRL_activity_reps <-
+  tapply(CTRL.temp$value, list(factor(CTRL.temp$byallele), factor(CTRL.temp$variable)), median)
+  max00 <-
+  as.vector(quantile(as.matrix(CTRL_activity_reps), c(0.0)))
+  max50 <-
+  as.vector(quantile(as.matrix(CTRL_activity_reps), c(0.5)))
+  CTRL_activity_reps.cor00 <-
+  cor(CTRL_activity_reps[apply(CTRL_activity_reps, MARGIN = 1, function(x)
+  all(x > max00)), ])
+  CTRL_activity_reps.cor50 <-
+  cor(CTRL_activity_reps[apply(CTRL_activity_reps, MARGIN = 1, function(x)
+  all(x > max50)), ]) #Quick way to estimate active constructs
+  GATA1_activity_reps <-
+  tapply(GATA1.temp$value, list(factor(GATA1.temp$byallele), factor(GATA1.temp$variable)), median)
+  max00 <-
+  as.vector(quantile(as.matrix(GATA1_activity_reps), c(0.0)))
+  max50 <-
+  as.vector(quantile(as.matrix(GATA1_activity_reps), c(0.5)))
+  GATA1_activity_reps.cor00 <-
+  cor(GATA1_activity_reps[apply(GATA1_activity_reps, MARGIN = 1, function(x)
+  all(x > max00)), ])
+  GATA1_activity_reps.cor50 <-
+  cor(GATA1_activity_reps[apply(GATA1_activity_reps, MARGIN = 1, function(x)
+  all(x > max50)), ]) #Quick way to estimate active constructs
+```
+  
+<br></br>
+Plot activity correlations <b> (Figure 1C) </b> (Note that the plot is truncated and highly active elements show good reproducibility whereas lowly active elements show poor reproducibility which is partially due to the larger log2 variance at low count barcodes):
+```{r, echo = TRUE, fig.width = 5, fig.height = 5}
+plot(
+  CTRL_activity_reps[, 1],
+  CTRL_activity_reps[, 2],
+  pch = 20,
+  xlim = c(0, 7),
+  ylim = c(0, 7),
+  main = "Example activity plot for two replicates",
+  ylab = "Replicate 2",
+  xlab = "Replicate 1"
+  )
+  boxplot(
+  CTRL_activity_reps.cor00[upper.tri(CTRL_activity_reps.cor00)],
+  CTRL_activity_reps.cor50[upper.tri(CTRL_activity_reps.cor50)],
+  GATA1_activity_reps.cor00[upper.tri(GATA1_activity_reps.cor00)],
+  GATA1_activity_reps.cor50[upper.tri(GATA1_activity_reps.cor50)],
+  ylim = c(0, 1),
+  las = 2,
+  names = c("K562 All", "K562 50%", "K562+G All", "K562+G 50%"),
+  cex.axis = 0.8,
+  ylab = "Pearson's R",
+  main = "Average activity correlations across all replicates"
+  )
+```
+  
+<br></br>
+Calculate and plot sliding window correlations < b > (Figure S1A) <  / b >:
+```{r, echo = TRUE}
+temp <-
+  MPRA_minP.ratio[, c("oligo", "bot", "CTRL.median", "GATA1.median")]
+  temp <-
+  temp[temp$oligo %in% names(table(temp$oligo)[table(temp$oligo) == 6]), ]
+  temp.melt <- melt(temp)
+  temp.col <-
+  cbind(temp.melt[temp.melt$variable == "CTRL.median" &
+  temp.melt$bot == "1/3", ]$value, temp.melt[temp.melt$variable == "CTRL.median" &
+  temp.melt$bot == "1/2", ]$value, temp.melt[temp.melt$variable == "CTRL.median" &
+  temp.melt$bot == "2/3", ]$value)
+  colnames(temp.col) <- c("Left", "Mid", "Right")
+  max00 <- as.vector(quantile(as.matrix(temp.col), c(0.0)))
+  max50 <- as.vector(quantile(as.matrix(temp.col), c(0.5)))
+  SW_activity.cor00 <-
+  cor(temp.col[apply(temp.col, MARGIN = 1, function(x)
+  all(x > max00)), ])
+  SW_activity.cor50 <-
+  cor(temp.col[apply(temp.col, MARGIN = 1, function(x)
+  all(x > max50)), ])
+  ggpairs(temp.col, upper = list(continuous = "cor", corMethod = "pearson")) + theme_tufte(base_size = 8)
+  #Can plot similarly for K562+GATA1
+```
+
+<br></br>
+Calculate barcode biases from randomly downsampling to specific total barcode numbers (Note this includes all replicates and the bias for single replicates would be higher):
+```{r, echo=TRUE, eval=FALSE}
+#Restrict to only barcodes with 14 after filtering
+MPRA_minP_14bc <-
+MPRA_minP[MPRA_minP$byallele %in% names(which(table(as.vector(MPRA_minP$byallele)) == 14)),]
+MPRA_minP_14bc$row <- row.names(MPRA_minP_14bc)
+
+#Loop up to half total number of barcodes
+for (i in c(1:7)) {
+#Function for subsampling i barcodes
+samp <- function(dataf)
+{
+dataf[sample(1:dim(dataf)[1], size = i, replace = FALSE),]
+}
+
+#Subsample for i number of barcodes twice
+culled_data <- ddply(MPRA_minP_14bc, .(byallele), samp)
+temp <-
+MPRA_minP_14bc[!(MPRA_minP_14bc$row %in% culled_data$row),]
+culled_data2 <- ddply(temp, .(byallele), samp)
+
+#Process data normally for subsample 1
+temp <- normalize.quantiles(as.matrix(culled_data[, 38:47]))
+temp <- temp - median(temp)
+culled_data.melt <-
+melt(
+culled_data[c(
+"chr",
+"pos",
+"ref",
+"alt",
+"type",
+"bot",
+"top",
+"clean",
+"oligo",
+"construct",
+"byallele",
+"K562_CTRL_RATIO_R1",
+"K562_CTRL_RATIO_R2",
+"K562_CTRL_RATIO_R3",
+"K562_CTRL_RATIO_R4",
+"K562_CTRL_RATIO_R5",
+"K562_CTRL_RATIO_R6",
+"K562_GATA1_RATIO_R1",
+"K562_GATA1_RATIO_R2",
+"K562_GATA1_RATIO_R3",
+"K562_GATA1_RATIO_R4"
+)],
+id = c(
+"chr",
+"pos",
+"ref",
+"alt",
+"type",
+"bot",
+"top",
+"clean",
+"oligo",
+"construct",
+"byallele"
+)
+)
+culled_data.melt$value <- melt(temp[, 1:10])$value
+CTRL.temp <-
+culled_data.melt[grep("CTRL", culled_data.melt$variable),]
+CTRL.value <-
+tapply(CTRL.temp$value, factor(CTRL.temp$byallele), median)
+GATA1.temp <-
+culled_data.melt[grep("GATA1", culled_data.melt$variable),]
+GATA1.value <-
+tapply(GATA1.temp$value, factor(GATA1.temp$byallele), median)
+RATIO.temp <-
+culled_data.melt[!duplicated(culled_data.melt$byallele),!(names(culled_data.melt) %in% c("value", "variable"))]
+culled_data.ratio <-
+merge(RATIO.temp,
+data.frame(byallele = names(CTRL.value), CTRL.median = CTRL.value),
+by = "byallele")
+culled_data.ratio <-
+merge(culled_data.ratio,
+data.frame(byallele = names(GATA1.value), GATA1.median = GATA1.value),
+by = "byallele")
+
+#Process data normally for subsample 2
+temp <- normalize.quantiles(as.matrix(culled_data2[, 38:47]))
+temp <- temp - median(temp)
+culled_data2.melt <-
+melt(
+culled_data2[c(
+"chr",
+"pos",
+"ref",
+"alt",
+"type",
+"bot",
+"top",
+"clean",
+"oligo",
+"construct",
+"byallele",
+"K562_CTRL_RATIO_R1",
+"K562_CTRL_RATIO_R2",
+"K562_CTRL_RATIO_R3",
+"K562_CTRL_RATIO_R4",
+"K562_CTRL_RATIO_R5",
+"K562_CTRL_RATIO_R6",
+"K562_GATA1_RATIO_R1",
+"K562_GATA1_RATIO_R2",
+"K562_GATA1_RATIO_R3",
+"K562_GATA1_RATIO_R4"
+)],
+id = c(
+"chr",
+"pos",
+"ref",
+"alt",
+"type",
+"bot",
+"top",
+"clean",
+"oligo",
+"construct",
+"byallele"
+)
+)
+culled_data2.melt$value <- melt(temp[, 1:10])$value
+CTRL.temp <-
+culled_data2.melt[grep("CTRL", culled_data2.melt$variable),]
+CTRL.value <-
+tapply(CTRL.temp$value, factor(CTRL.temp$byallele), median)
+GATA1.temp <-
+culled_data2.melt[grep("GATA1", culled_data2.melt$variable),]
+GATA1.value <-
+tapply(GATA1.temp$value, factor(GATA1.temp$byallele), median)
+RATIO.temp <-
+culled_data2.melt[!duplicated(culled_data2.melt$byallele),!(names(culled_data2.melt) %in% c("value", "variable"))]
+culled_data2.ratio <-
+merge(RATIO.temp,
+data.frame(byallele = names(CTRL.value), CTRL.median = CTRL.value),
+by = "byallele")
+culled_data2.ratio <-
+merge(culled_data2.ratio,
+data.frame(byallele = names(GATA1.value), GATA1.median = GATA1.value),
+by = "byallele")
+
+#Correlate total activities across all replicates
+cor(culled_data.ratio$CTRL.median,
+culled_data2.ratio$CTRL.median)
+cor(culled_data.ratio$GATA1.median,
+culled_data2.ratio$GATA1.median)
+}
+```
+
+<br></br>
+Values obtained from above were saved (given time it took to subsample) and are plotted with a fitted beta regression <b>(Figure S1B)</b>:
+```{r, echo=TRUE}
+bb <-
+  data.frame(matrix(
+  c(7, 6, 5, 4, 3, 2, 1, 0.727, 0.695, 0.654, 0.613, 0.525, 0.424, 0.308),
+  ncol = 2
+  ))
+  plot(
+  bb$X1,
+  bb$X2,
+  ylim = c(0, 1),
+  xlim = c(0, 40),
+  main = "Estimating barcode biases",
+  ylab = "Pearson's R",
+  xlab = "Unique barcodes per construct",
+  pch=20
+  )
+  mod <- betareg(X2 ~ X1, data = bb, link = "logit")
+  bb2 <-
+  data.frame(matrix(rev(
+  c(30, 25, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+  ), ncol = 1))
+  colnames(bb2) <- "X1"
+  print("Preidcted Pearson's R across all replicates for subsampled barcode counts:")
+  print(predict(mod, bb2))
+  lines(bb2$X1, predict(mod, bb2))
+```
+
+<br></br>
+Read in DHS jaccard, cluster, and plot dendrogram. Also read in and plot GWAS overlap with DHS. Components here are in <b>Figure 2C and 2D</b>:
+```{r, echo=TRUE, fig.width=7, fig.height=6}
+#Read in DHS correlation data (Jaccard)
+DHS <- read.table(paste0(dir, "EpigenomicOverlaps/","DHS.R.txt"), sep = "\t", header = F)
+
+#Calculate distance matrix
+DHS.w <-
+reshape(DHS,
+timevar = "V1",
+idvar = c("V2"),
+direction = "wide")
+row.names(DHS.w) <- DHS.w$V2
+DHS.w$V2 <- NULL
+DHS.w  <- DHS.w[, order(names(DHS.w))]
+colnames(DHS.w) <- row.names(DHS.w)
+#DHS.d <- 1 - cor(DHS.w)
+DHS.d <- 1 -DHS.w
+DHS.d <- as.dist(DHS.d)
+
+#Order heatmap and scale to maximum jaccard value
+max = 0.50
+DHS$V1 <- factor(DHS$V1, levels = labels(as.dendrogram(hclust(DHS.d))))
+DHS$V2 <- factor(DHS$V2, levels = labels(as.dendrogram(hclust(DHS.d))))
+DHS$V4 <- ifelse(DHS$V3 > max, max, DHS$V3)
+names(DHS) <- c("Cell_type_1", "Cell_type_2", "Jaccardns", "Jaccard")
+
+#Correlations and dendrogram
+qplot(
+x = Cell_type_1,
+y = Cell_type_2,
+data = DHS,
+fill = Jaccard,
+geom = "tile"
+) + scale_fill_gradient2(limits = c(0, max)) + theme(axis.text.x = element_text(
+angle = 90,
+hjust = 1,
+size = 6
+),
+axis.text.y = element_text(size = 6))
+```
+  
+```{r, echo=TRUE, fig.width=7, fig.height=3}
+ggdendrogram(hclust(DHS.d))
+```
+
+```{r, echo=TRUE, fig.width=9, fig.height=4}
+#Plot enrichment for GWAS hits (using bedtools we intersect all variants in LD with 75 SNPs with processed HEP peaks and Roadmap peaks count number27 of sentinel SNPs with at least 1 overlap)
+intersect <-
+read.table(
+paste0(dir, "EpigenomicOverlaps/", "50k.intersect.v3.txt"),
+sep = "\t",
+header = F
+)
+intersect$V1 <-
+factor(intersect$V1, levels = labels(as.dendrogram(hclust(DHS.d))))
+intersect <- intersect[order(intersect$V1), ]
+intersect$V4 <- intersect$V2 / 75
+ggplot(intersect, aes(x = V1, levels = V1, y = V4)) + geom_bar(aes(fill =
+V3), stat = "identity") + theme(axis.text.x = element_text(
+angle = 90,
+hjust = 1,
+size = 6
+)) + labs(y = "% overlap", x = "Cell type")
+```
+
+<br></br>
+Create variable to indicate controls (removing DARC locus not used in manuscript):
+```{r, echo=TRUE, fig.width=5, fig.height=5}
+controls <-
+  c("1 155271258",
+  "X 55054634",
+  "X 55054635",
+  "X 55054636",
+  "10 127505272")
+  MPRA_minP.ratio <-
+  as.data.frame(append(MPRA_minP.ratio, list(
+  controls = ifelse(MPRA_minP.ratio$oligo %in% controls, 1, 0)
+  ), after = 11))
+  MPRA_minP.ratio <-
+  MPRA_minP.ratio[!(MPRA_minP.ratio$construct %in% "1 159174683"), ]
+```
+
+<br></br>
+Determine active constructs (1-sided Mann-Whitney-U test versus all others) and alleles with differences in activity:
+```{r, echo=TRUE, eval=FALSE}
+#Calculate p-values for overall enhancer activity
+MPRA_minP.control.final <-
+MPRA_minP.melt[grep("CTRL", MPRA_minP.melt$variable), ]
+MPRA_minP.control.final.pvalues <- data.frame(matrix(ncol = 3))
+colnames(MPRA_minP.control.final.pvalues) <-
+c("byallele", "oligo", "Control_P")
+for (j in levels(factor(MPRA_minP.control.final$byallele))) {
+if (length(MPRA_minP.control.final[MPRA_minP.control.final$byallele == j, ]$value) >=
+7) {
+MPRA_minP.control.final.pvalues <-
+rbind(
+MPRA_minP.control.final.pvalues,
+data.frame(
+byallele = j,
+oligo = MPRA_minP.control.final[MPRA_minP.control.final$byallele == j, ]$oligo[1],
+Control_P = wilcox.test(
+MPRA_minP.control.final[MPRA_minP.control.final$byallele == j, ]$value,
+MPRA_minP.control.final[MPRA_minP.control.final$byallele != j, ]$value,
+alternative = c("greater")
+)$p.value
+)
+)
+}
+#if(j=="1 158459975 1/2 Ref") break
+}
+
+saveRDS(MPRA_minP.control.final.pvalues, file = "MPRA_minP.control.final.pvalues.rds")
+```
+
+<br></br>
+Determine alleles with differences in activity (2-sided Mann-Whitney-U test between alleles):
+```{r, echo=TRUE, eval=FALSE}
+#Calculate p-values for differential activity between alleles
+MPRA_minP.control.final <-
+MPRA_minP.melt[grep("CTRL", MPRA_minP.melt$variable), ]
+MPRA_minP.control.final.mut.pvalues <- data.frame(matrix(ncol = 3))
+colnames(MPRA_minP.control.final.mut.pvalues) <-
+c("construct", "oligo", "Control_P")
+for (j in levels(factor(MPRA_minP.control.final$construct))) {
+if (nlevels(factor(MPRA_minP.control.final[MPRA_minP.control.final$construct ==
+j, ]$type)) == 2) {
+MPRA_minP.control.final.mut.pvalues <-
+rbind(
+MPRA_minP.control.final.mut.pvalues,
+data.frame(
+construct = j,
+oligo = MPRA_minP.control.final[MPRA_minP.control.final$byallele == j, ]$oligo[1],
+Control_P = wilcox.test(value ~ factor(type), data = MPRA_minP.control.final[MPRA_minP.control.final$construct ==
+j, ])$p.value
+)
+)
+}
+#if(j=="1 158459975 1/2 Ref") break
+}
+
+saveRDS(MPRA_minP.control.final.mut.pvalues, file = "MPRA_minP.control.final.mut.pvalues.rds")
+```
+
+<br></br>
+Read in already calculated p-values for activity and differential activity by allele:
+```{r, echo=TRUE, fig.width=5, fig.height=5}
+MPRA_minP.CTRL.pvalues <-
+  readRDS(paste0(dir, "Precomputed/","MPRA_minP.control.final.pvalues.rds"))
+  MPRA_minP.GATA1.pvalues <-
+  readRDS(paste0(dir, "Precomputed/","MPRA_minP.GATA1.final.pvalues.rds"))
+  MPRA_minP.CTRL.mut.pvalues <-
+  readRDS(paste0(dir, "Precomputed/","MPRA_minP.control.final.mut.pvalues.rds"))
+  MPRA_minP.GATA1.mut.pvalues <-
+  readRDS(paste0(dir, "Precomputed/","MPRA_minP.GATA1.final.mut.pvalues.rds"))
+```
+
+<br></br>
+Merge test results and calculate FDR:
+```{r, echo=TRUE, fig.width=5, fig.height=5}
+MPRA_minP.ratio <-
+  merge(MPRA_minP.ratio,
+  MPRA_minP.CTRL.pvalues,
+  by = c("byallele", "oligo"))
+  MPRA_minP.ratio <-
+  merge(MPRA_minP.ratio,
+  MPRA_minP.GATA1.pvalues,
+  by = c("byallele", "oligo"))
+  colnames(MPRA_minP.ratio)[15:16] <- c("CTRL.p", "GATA1.p")
+  MPRA_minP.ratio$CTRL.padj <-
+  qvalue(MPRA_minP.ratio$CTRL.p)[3]$qvalues
+  MPRA_minP.ratio$GATA1.padj <-
+  qvalue(MPRA_minP.ratio$GATA1.p)[3]$qvalues
+  MPRA_minP.ratio <-
+  merge(MPRA_minP.ratio,
+  MPRA_minP.CTRL.mut.pvalues[, c(1, 3)],
+  by = c("construct"))
+  MPRA_minP.ratio <-
+  merge(MPRA_minP.ratio,
+  MPRA_minP.GATA1.mut.pvalues[, c(1, 3)],
+  by = c("construct"))
+  colnames(MPRA_minP.ratio)[19:20] <- c("CTRL.mut.p", "GATA1.mut.p")
+  MPRA_minP.ratio$CTRL.mut.padj <-
+  qvalue(MPRA_minP.ratio$CTRL.mut.p)[3]$qvalues
+  MPRA_minP.ratio$GATA1.mut.padj <-
+  qvalue(MPRA_minP.ratio$GATA1.mut.p)[3]$qvalues
+```
+
+<br></br>
+Boxplots of Mendelian positive control variants for K562 <b>(Figure 3A)</b>:
+```{r, echo=TRUE, fig.width=8, fig.height=5}
+#K562 CTRL
+par(mfrow = c(2, 3), mai = c(1, 0.3, 0.3, 0.1))
+for (i in controls) {
+boxplot(
+CTRL.temp[CTRL.temp$oligo == i, ]$value ~ factor(CTRL.temp[CTRL.temp$oligo ==
+i, ]$byallele),
+cex.axis = 0.75,
+main = i,
+ylab = "Activity",
+las = 2
+)
+}
+```
+
+<br></br>
+Boxplots of Mendelian positive control variants for K562+GATA1 <b>Figure S3A</b>:
+```{r, echo=TRUE, fig.width=8, fig.height=5}
+#K562 GATA1
+par(mfrow = c(2, 3), mai = c(1, 0.3, 0.3, 0.1))
+for (i in controls) {
+boxplot(
+GATA1.temp[GATA1.temp$oligo == i, ]$value ~ factor(GATA1.temp[GATA1.temp$oligo ==
+i, ]$byallele),
+cex.axis = 0.75,
+main = i,
+ylab = "Activity",
+las = 2
+)
+}
+```
+
+<br></br>
+Density plots of active/inactive constructs and Mendelian controls (ref/mut) <b>(Figure 3B)</b>:
+```{r, echo=TRUE, fig.width=5, fig.height=3}
+dat <-
+  data.frame(
+  dens = c(
+  MPRA_minP.ratio[MPRA_minP.ratio$CTRL.padj <= 0.01,]$CTRL.median,
+  MPRA_minP.ratio[MPRA_minP.ratio$CTRL.padj > 0.01,]$CTRL.median,
+  MPRA_minP.ratio[MPRA_minP.ratio$type == "Mut" &
+  MPRA_minP.ratio$controls == 1,]$CTRL.median,
+  MPRA_minP.ratio[MPRA_minP.ratio$type == "Ref" &
+  MPRA_minP.ratio$controls == 1,]$CTRL.median
+  ),
+  lines = c(
+  rep("Active", length(MPRA_minP.ratio[MPRA_minP.ratio$CTRL.padj <= 0.01,]$CTRL.median)),
+  rep("Inactive", length(MPRA_minP.ratio[MPRA_minP.ratio$CTRL.padj > 0.01,]$CTRL.median)),
+  rep("Control Mut", length(MPRA_minP.ratio[MPRA_minP.ratio$type ==
+  "Mut" & MPRA_minP.ratio$controls == 1,]$CTRL.median)),
+  rep("Control WT", length(MPRA_minP.ratio[MPRA_minP.ratio$type ==
+  "Ref" & MPRA_minP.ratio$controls == 1,]$CTRL.median))
+  )
+  )
+  ggplot(dat, aes(x = dens, fill = lines)) + geom_density(alpha = 0.5) + theme(axis.title.x = element_blank()) + theme(
+  plot.background = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.border = element_blank()
+  ) + theme_bw() + labs(x = "activity") + scale_fill_brewer(palette = "Set3")
+```
+
+<br></br>
+Density plots of active/inactive constructs and Mendlian controls (ref/mut) <b>(Figure 3B)</b>:
+```{r, echo=TRUE, fig.width=5, fig.height=3}
+dat <-
+  data.frame(
+  dens = c(
+  MPRA_minP.ratio[MPRA_minP.ratio$GATA1.padj <= 0.01,]$GATA1.median,
+  MPRA_minP.ratio[MPRA_minP.ratio$GATA1.padj > 0.01,]$GATA1.median,
+  MPRA_minP.ratio[MPRA_minP.ratio$type == "Mut" &
+  MPRA_minP.ratio$controls == 1,]$GATA1.median,
+  MPRA_minP.ratio[MPRA_minP.ratio$type == "Ref" &
+  MPRA_minP.ratio$controls == 1,]$GATA1.median
+  ),
+  lines = c(
+  rep("Active", length(MPRA_minP.ratio[MPRA_minP.ratio$GATA1.padj <= 0.01,]$GATA1.median)),
+  rep("Inactive", length(MPRA_minP.ratio[MPRA_minP.ratio$GATA1.padj > 0.01,]$GATA1.median)),
+  rep("Control Mut", length(MPRA_minP.ratio[MPRA_minP.ratio$type ==
+  "Mut" & MPRA_minP.ratio$controls == 1,]$GATA1.median)),
+  rep("Control WT", length(MPRA_minP.ratio[MPRA_minP.ratio$type ==
+  "Ref" & MPRA_minP.ratio$controls == 1,]$GATA1.median))
+  )
+  )
+  ggplot(dat, aes(x = dens, fill = lines)) + geom_density(alpha = 0.5) + theme(axis.title.x = element_blank()) + theme(
+  plot.background = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.border = element_blank()
+  ) + labs(x = "activity") + theme_bw() + scale_fill_brewer(palette = "Set3")
+```
+
+<br></br>
+Calculate fold change:
+```{r, echo=TRUE}
+REF <-
+  MPRA_minP.ratio[MPRA_minP.ratio$type == "Ref", c("construct", "CTRL.median", "GATA1.median")]
+  MUT <-
+  MPRA_minP.ratio[MPRA_minP.ratio$type == "Mut", c("construct", "CTRL.median", "GATA1.median")]
+  temp <- merge(MUT, REF, by = "construct")
+  temp$CTRL.fc <- temp$CTRL.median.x - temp$CTRL.median.y
+  temp$GATA1.fc <- temp$GATA1.median.x - temp$GATA1.median.y
+  temp <- temp[, c("construct", "CTRL.fc", "GATA1.fc")]
+  MPRA_minP.ratio <- merge(MPRA_minP.ratio, temp, by = "construct")
+```
+
+<br></br>
+Read in tag variants:
+```{r, echo=TRUE, fig.width=7, fig.height=4}
+tags <-
+  read.table(paste0(dir, "Annotations/", "1000Genomes_Pilot3_LDpt8.tags"),
+  sep = " ")
+  tags$tagSNP <- do.call(paste, as.data.frame(cbind(tags$V1, tags$V2)))
+  tags$oligo <- do.call(paste, as.data.frame(cbind(tags$V5, tags$V6)))
+  colnames(tags) <-
+  c(
+  "tag_chr",
+  "tag_pos",
+  "tag_ref",
+  "tag_alt",
+  "chr",
+  "pos",
+  "ref",
+  "alt",
+  "tagSNP",
+  "oligo"
+  )
+```
+
+<br></br>
+Plot MPRA Functional Variants (MFVs) and their effect sizes <b>(Figure 3G)</b>:
+```{r, echo=TRUE, fig.width=7, fig.height=4}
+MPRA_minP.sig <-
+  MPRA_minP.ratio[MPRA_minP.ratio$CTRL.mut.padj < 0.01 |
+  MPRA_minP.ratio$GATA1.mut.padj < 0.01, ]
+  MPRA_minP.sig <- merge(MPRA_minP.sig, tags, by = "oligo")
+  MPRA_minP.hist <-
+  data.frame(tapply(MPRA_minP.sig$oligo, MPRA_minP.sig$tagSNP, function(x)
+  nlevels(factor(x))))
+  colnames(MPRA_minP.hist) <- c("count")
+  #rownames(MPRA_minP.hist) <- paste("chr", rownames(MPRA_minP.hist),sep="")
+  MPRA_minP.hist$oligo <- row.names(MPRA_minP.hist)
+  rsnumber <-
+  read.csv(paste0(dir, "Annotations/", "rsSNP_annotation.csv"))
+  MPRA_minP.hist <- merge(MPRA_minP.hist, rsnumber, by = "oligo")
+  MPRA_minP.hist <- MPRA_minP.hist[order(MPRA_minP.hist$count), ]
+  row.names(MPRA_minP.hist) <- seq(1, dim(MPRA_minP.hist)[1], 1)
+  ggplot(data = MPRA_minP.hist, aes(x = factor(dbSNP, levels = dbSNP), y =
+  count)) + geom_bar(stat = "identity", alpha = .5) + theme_bw(base_size = 10, base_family = "Helvetica") + theme(text = element_text(size =
+  10),
+  axis.text.x = element_text(angle = 90, vjust = 1)) + theme(axis.title.x = element_blank()) +
+  theme(
+  plot.background = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.border = element_blank()
+  )
+  
+  #Estimating average fold change for MFVs vs. nMFVs
+  CTRL.construct <-
+  unique(MPRA_minP.ratio[MPRA_minP.ratio$CTRL.mut.padj < 0.01 &
+  MPRA_minP.ratio$controls == 0, ]$construct)
+  GATA1.construct <-
+  unique(MPRA_minP.ratio[MPRA_minP.ratio$GATA1.mut.padj < 0.01 &
+  MPRA_minP.ratio$controls == 0, ]$construct)
+  
+  nMFV_ES_CTRL <-
+  abs(as.vector(MPRA_minP.ratio[!(MPRA_minP.ratio$construct %in% CTRL.construct), ]$CTRL.fc))
+  MFV_ES_CTRL <-
+  abs(as.vector(MPRA_minP.ratio[MPRA_minP.ratio$construct %in% CTRL.construct, ]$CTRL.fc))
+  nMFV_ES_GATA <-
+  abs(as.vector(MPRA_minP.ratio[!(MPRA_minP.ratio$construct %in% GATA1.construct), ]$GATA1.fc))
+  MFV_ES_GATA <-
+  abs(as.vector(MPRA_minP.ratio[MPRA_minP.ratio$construct %in% GATA1.construct, ]$GATA1.fc))
+  vioplot(
+  nMFV_ES_CTRL,
+  MFV_ES_CTRL,
+  nMFV_ES_GATA,
+  MFV_ES_GATA,
+  names = c("K562 nMFV", "K562 MFV", "K562+G nMFV", "K562+G MFV")
+  )
+
+```
+
+<br></br>
+Compare number of barcodes between MFV and nMFVs:
+```{r, echo=TRUE, fig.width=5, fig.height=5}
+#Comparing number of barcodes for MFVs vs nMFVs
+nMFV_barcodes <-
+as.vector(table(as.vector(MPRA_minP[!(MPRA_minP$construct %in% c(MPRA_minP.sig[MPRA_minP.sig$controls ==
+0, ]$construct, MPRA_minP.ratio[MPRA_minP.ratio$controls == 1, ]$construct)), ]$construct)))
+MFV_barcodes <-
+as.vector(table(as.vector(MPRA_minP[MPRA_minP$construct %in% MPRA_minP.sig[MPRA_minP.sig$controls ==
+0, ]$construct, ]$construct)))
+boxplot(
+nMFV_barcodes,
+MFV_barcodes,
+ylab = "Total barcode count across both alleles",
+names = c("nMFVs", "MFVs"),
+main = "Comparison of barcode representation"
+)
+t.test(nMFV_barcodes, MFV_barcodes)
+```
+
+<br></br>
+Read in DeepSEA, EIGEN, gkmer-SVM (K562 DHS), PICS (CEU population) and plot enrichments <b>Figure 3L, 3M, S3F</b>:
+```{r, echo=TRUE, fig.width=8, fig.height=4}
+#Create categories for enrichments
+fdr01.oligo <-
+unique(as.vector(MPRA_minP.ratio[with(MPRA_minP.ratio,
+controls == 0 &
+(CTRL.mut.padj < 0.001 | GATA1.mut.padj < 0.001),
+oligo), "oligo"]))
+fdr1.oligo <-
+unique(as.vector(MPRA_minP.ratio[with(MPRA_minP.ratio,
+controls == 0 &
+(CTRL.mut.padj < 0.01 | GATA1.mut.padj < 0.01),
+oligo), "oligo"]))
+fdr5.oligo <-
+unique(as.vector(MPRA_minP.ratio[with(MPRA_minP.ratio,
+controls == 0 &
+(CTRL.mut.padj < 0.05 | GATA1.mut.padj < 0.05),
+oligo), "oligo"]))
+fdr10.oligo <-
+unique(as.vector(MPRA_minP.ratio[with(MPRA_minP.ratio,
+controls == 0 &
+(CTRL.mut.padj < 0.10 | GATA1.mut.padj < 0.10),
+oligo), "oligo"]))
+fdr20.oligo <-
+unique(as.vector(MPRA_minP.ratio[with(MPRA_minP.ratio,
+controls == 0 &
+(CTRL.mut.padj < 0.20 | GATA1.mut.padj < 0.20),
+oligo), "oligo"]))
+fdr50.oligo <-
+unique(as.vector(MPRA_minP.ratio[with(MPRA_minP.ratio,
+controls == 0 &
+(CTRL.mut.padj < 0.50 | GATA1.mut.padj < 0.50),
+oligo), "oligo"]))
+fdr100.oligo <-
+unique(as.vector(MPRA_minP.ratio[with(MPRA_minP.ratio,
+controls == 0 &
+(CTRL.mut.padj <= 1 | GATA1.mut.padj <= 1),
+oligo), "oligo"]))
+fdr1controls.oligo <-
+unique(as.vector(MPRA_minP.ratio[with(MPRA_minP.ratio, controls == 1, oligo), "oligo"]))
+fdr1HAC.oligo <-
+unique(as.vector(MPRA_minP.ratio[with(
+MPRA_minP.ratio,
+controls == 0 &
+(CTRL.padj < 0.01 |
+GATA1.padj < 0.01) & !(oligo %in% fdr1.oligo),
+oligo
+), "oligo"]))
+
+####################
+#Read in EIGEN data
+eigen <-
+read.table(paste0(dir, "FunctionalEnrichments/", "MPRA_EIGEN.txt"))
+colnames(eigen) <- c("chr", "pos", "ref", "alt", "eigen")
+eigen$oligo <- paste(eigen$chr, eigen$pos)
+
+#Compute EIGEN in FDR bins
+fdr01.value <- eigen[with(eigen, oligo %in% fdr01.oligo), ]$eigen
+fdr1.value <- eigen[with(eigen, oligo %in% fdr1.oligo), ]$eigen
+fdr5.value <- eigen[with(eigen, oligo %in% fdr5.oligo), ]$eigen
+fdr10.value <- eigen[with(eigen, oligo %in% fdr10.oligo), ]$eigen
+fdr20.value <- eigen[with(eigen, oligo %in% fdr20.oligo), ]$eigen
+fdr50.value <- eigen[with(eigen, oligo %in% fdr50.oligo), ]$eigen
+fdr100.value <- eigen[with(eigen, oligo %in% fdr100.oligo), ]$eigen
+fdr1controls.value <-
+eigen[with(eigen, oligo %in% fdr1controls.oligo), ]$eigen
+fdr1HAC.value <- eigen[with(eigen, oligo %in% fdr1HAC.oligo), ]$eigen
+combined <-
+as.data.frame(cbind(
+value = c(
+fdr01.value,
+fdr1.value,
+fdr5.value,
+fdr10.value,
+fdr20.value,
+fdr50.value,
+fdr100.value,
+fdr1controls.value,
+fdr1HAC.value
+),
+group = c(
+rep("0.1%", length(fdr01.value)),
+rep("1%", length(fdr1.value)),
+rep("5%", length(fdr5.value)),
+rep("10%", length(fdr10.value)),
+rep("20%", length(fdr20.value)),
+rep("50%", length(fdr50.value)),
+rep("100%", length(fdr100.value)),
+rep("ctrls", length(fdr1controls.value)),
+rep("HACs", length(fdr1HAC.value))
+)
+), stringsAsFactors = F)
+combined$value <- as.numeric(combined$value)
+combined$group <-
+factor(combined$group,
+ordered = T,
+levels = unique(combined$group))
+
+#Plot and perform hypothesis tests
+combined.table <-
+aggregate(combined$value, by = list(combined$group), mean)
+height <- t(combined.table[-1])
+colnames(height) <- combined.table[, 1]
+barplot(height, main = "Eigen enrichments")
+t.test(fdr1.value, fdr100.value)
+t.test(fdr1.value, fdr1HAC.value)
+
+
+####################
+#Read in DeepSea functional significance data
+ds1 <-
+read.csv(paste0(dir, "FunctionalEnrichments/", "MPRA_DEEPSEA_funsig.txt"))
+ds1$oligo <- paste(gsub("chr", "", ds1$chr), ds1$pos)
+ds1$log10score <- -log10(ds1$DeepSEA.score)
+
+#Compute DeepSea FunSig in FDR bins
+fdr01.value <- ds1[with(ds1, oligo %in% fdr01.oligo), ]$log10score
+fdr1.value <- ds1[with(ds1, oligo %in% fdr1.oligo), ]$log10score
+fdr5.value <- ds1[with(ds1, oligo %in% fdr5.oligo), ]$log10score
+fdr10.value <- ds1[with(ds1, oligo %in% fdr10.oligo), ]$log10score
+fdr20.value <- ds1[with(ds1, oligo %in% fdr20.oligo), ]$log10score
+fdr50.value <- ds1[with(ds1, oligo %in% fdr50.oligo), ]$log10score
+fdr100.value <- ds1[with(ds1, oligo %in% fdr100.oligo), ]$log10score
+fdr1controls.value <-
+ds1[with(ds1, oligo %in% fdr1controls.oligo), ]$log10score
+fdr1HAC.value <- ds1[with(ds1, oligo %in% fdr1HAC.oligo), ]$log10score
+combined <-
+as.data.frame(cbind(
+value = c(
+fdr01.value,
+fdr1.value,
+fdr5.value,
+fdr10.value,
+fdr20.value,
+fdr50.value,
+fdr100.value,
+fdr1controls.value,
+fdr1HAC.value
+),
+group = c(
+rep("0.1%", length(fdr01.value)),
+rep("1%", length(fdr1.value)),
+rep("5%", length(fdr5.value)),
+rep("10%", length(fdr10.value)),
+rep("20%", length(fdr20.value)),
+rep("50%", length(fdr50.value)),
+rep("100%", length(fdr100.value)),
+rep("ctrls", length(fdr1controls.value)),
+rep("HACs", length(fdr1HAC.value))
+)
+), stringsAsFactors = F)
+combined$value <- as.numeric(combined$value)
+combined$group <-
+factor(combined$group,
+ordered = T,
+levels = unique(combined$group))
+
+#Plot and perform hypothesis tests
+combined.table <-
+aggregate(combined$value, by = list(combined$group), mean)
+height <- t(combined.table[-1])
+colnames(height) <- combined.table[, 1]
+barplot(height, main = "DeepSea FunSig enrichments")
+t.test(fdr1.value, fdr100.value)
+t.test(fdr1.value, fdr1HAC.value)
+
+
+####################
+#Read in gkmerSVM K562 prediction data
+gkmer_PROE <-
+read.table(paste0(dir, "FunctionalEnrichments/", "deltasvm_MPRA_K562.txt"))
+colnames(gkmer_PROE) <- c("variant", "delta")
+gkmer_PROE$oligo <-
+gsub(" [ACTG]* [ACTG]*$", "", gsub(":", " ", gkmer_PROE$variant))
+
+#Compute gkmerSVM K562 delta in FDR bins
+fdr01.value <-
+gkmer_PROE[with(gkmer_PROE, oligo %in% fdr01.oligo), ]$delta
+fdr1.value <-
+gkmer_PROE[with(gkmer_PROE, oligo %in% fdr1.oligo), ]$delta
+fdr5.value <-
+gkmer_PROE[with(gkmer_PROE, oligo %in% fdr5.oligo), ]$delta
+fdr10.value <-
+gkmer_PROE[with(gkmer_PROE, oligo %in% fdr10.oligo), ]$delta
+fdr20.value <-
+gkmer_PROE[with(gkmer_PROE, oligo %in% fdr20.oligo), ]$delta
+fdr50.value <-
+gkmer_PROE[with(gkmer_PROE, oligo %in% fdr50.oligo), ]$delta
+fdr100.value <-
+gkmer_PROE[with(gkmer_PROE, oligo %in% fdr100.oligo), ]$delta
+fdr1controls.value <-
+gkmer_PROE[with(gkmer_PROE, oligo %in% fdr1controls.oligo), ]$delta
+fdr1HAC.value <-
+gkmer_PROE[with(gkmer_PROE, oligo %in% fdr1HAC.oligo), ]$delta
+combined <-
+as.data.frame(cbind(
+value = c(
+fdr01.value,
+fdr1.value,
+fdr5.value,
+fdr10.value,
+fdr20.value,
+fdr50.value,
+fdr100.value,
+fdr1controls.value,
+fdr1HAC.value
+),
+group = c(
+rep("0.1%", length(fdr01.value)),
+rep("1%", length(fdr1.value)),
+rep("5%", length(fdr5.value)),
+rep("10%", length(fdr10.value)),
+rep("20%", length(fdr20.value)),
+rep("50%", length(fdr50.value)),
+rep("100%", length(fdr100.value)),
+rep("ctrls", length(fdr1controls.value)),
+rep("HACs", length(fdr1HAC.value))
+)
+), stringsAsFactors = F)
+combined$value <- as.numeric(combined$value)
+combined$group <-
+factor(combined$group,
+ordered = T,
+levels = unique(combined$group))
+
+#Plot and perform hypothesis tests
+combined.table <-
+aggregate(combined$value, by = list(combined$group), function(x) {
+mean(abs(x))
+})
+height <- t(combined.table[-1])
+colnames(height) <- combined.table[, 1]
+barplot(height, main = "gkmer-SVM K562 enrichments")
+t.test(abs(fdr1.value), abs(fdr100.value))
+t.test(abs(fdr1.value), abs(fdr1HAC.value))
+
+#Correlate MFV FC with delta, plot, and calculate agreement
+MPRA_minP.sig <-
+merge(MPRA_minP.ratio[with(MPRA_minP.ratio, oligo %in% fdr1.oligo), ], gkmer_PROE, by =
+"oligo")
+gkmer.DELTA <-
+ddply(MPRA_minP.sig, ~ oligo, summarise, mean(delta))[, 2]
+MPRA.FC <- ddply(MPRA_minP.sig, ~ oligo, summarise, mean(GATA1.fc))[, 2]
+plot(cbind(gkmer.DELTA, MPRA.FC), pch = 20, main = "MPRA and gkmer-SVM correlation at MFVs")
+cor(cbind(gkmer.DELTA, MPRA.FC))
+table(gkmer.DELTA * MPRA.FC > 0)
+
+#Correlate AC FC with delta, plot, and calculate agreement
+MPRA_minP.sig <-
+merge(MPRA_minP.ratio[with(MPRA_minP.ratio, oligo %in% fdr1HAC.oligo), ], gkmer_PROE, by =
+"oligo")
+gkmer.DELTA <-
+ddply(MPRA_minP.sig, ~ oligo, summarise, mean(delta))[, 2]
+MPRA.FC <- ddply(MPRA_minP.sig, ~ oligo, summarise, mean(GATA1.fc))[, 2]
+plot(cbind(gkmer.DELTA, MPRA.FC), pch = 20, main = "MPRA and gkmer-SVM correlation at ACs/nMFVs")
+cor(cbind(gkmer.DELTA, MPRA.FC))
+table(gkmer.DELTA * MPRA.FC > 0)
+
+
+####################
+#Read in DeepSea K562 prediction data
+ds2 <-
+read.csv(paste0(
+dir,
+"FunctionalEnrichments/",
+"MPRA_DEEPSEA_logfoldchange.txt"
+))
+ds2$oligo <- paste(gsub("chr", "", ds2$chr), ds2$pos)
+
+#Compute DeepSea K562 delta in FDR bins
+fdr01.value <-
+ds2[with(ds2, oligo %in% fdr01.oligo), ]$K562.DNase.None
+fdr1.value <- ds2[with(ds2, oligo %in% fdr1.oligo), ]$K562.DNase.None
+fdr5.value <- ds2[with(ds2, oligo %in% fdr5.oligo), ]$K562.DNase.None
+fdr10.value <-
+ds2[with(ds2, oligo %in% fdr10.oligo), ]$K562.DNase.None
+fdr20.value <-
+ds2[with(ds2, oligo %in% fdr20.oligo), ]$K562.DNase.None
+fdr50.value <-
+ds2[with(ds2, oligo %in% fdr50.oligo), ]$K562.DNase.None
+fdr100.value <-
+ds2[with(ds2, oligo %in% fdr100.oligo), ]$K562.DNase.None
+fdr1controls.value <-
+ds2[with(ds2, oligo %in% fdr1controls.oligo), ]$K562.DNase.None
+fdr1HAC.value <-
+ds2[with(ds2, oligo %in% fdr1HAC.oligo), ]$K562.DNase.None
+combined <-
+as.data.frame(cbind(
+value = c(
+fdr01.value,
+fdr1.value,
+fdr5.value,
+fdr10.value,
+fdr20.value,
+fdr50.value,
+fdr100.value,
+fdr1controls.value,
+fdr1HAC.value
+),
+group = c(
+rep("0.1%", length(fdr01.value)),
+rep("1%", length(fdr1.value)),
+rep("5%", length(fdr5.value)),
+rep("10%", length(fdr10.value)),
+rep("20%", length(fdr20.value)),
+rep("50%", length(fdr50.value)),
+rep("100%", length(fdr100.value)),
+rep("ctrls", length(fdr1controls.value)),
+rep("HACs", length(fdr1HAC.value))
+)
+), stringsAsFactors = F)
+combined$value <- as.numeric(combined$value)
+combined$group <-
+factor(combined$group,
+ordered = T,
+levels = unique(combined$group))
+
+#Plot and perform hypothesis tests
+combined.table <-
+aggregate(combined$value, by = list(combined$group), function(x) {
+mean(abs(x))
+})
+height <- t(combined.table[-1])
+colnames(height) <- combined.table[, 1]
+barplot(height, main = "DeepSea K562 enrichments")
+t.test(abs(fdr1.value), abs(fdr100.value))
+t.test(abs(fdr1.value), abs(fdr1HAC.value))
+
+#Correlate MFV FC with delta, plot, and calculate agreement
+MPRA_minP.sig <-
+merge(MPRA_minP.ratio[with(MPRA_minP.ratio, oligo %in% fdr1.oligo), ], ds2, by =
+"oligo")
+deepsea.DELTA <-
+ddply(MPRA_minP.sig, ~ oligo, summarise, mean(K562.DNase.None))[, 2]
+MPRA.FC <- ddply(MPRA_minP.sig, ~ oligo, summarise, mean(GATA1.fc))[, 2]
+plot(cbind(deepsea.DELTA, MPRA.FC),
+pch = 20,
+main = "MPRA and DeepSea correlation at MFVs")
+cor(cbind(deepsea.DELTA, MPRA.FC))
+table(deepsea.DELTA * MPRA.FC > 0)
+
+#Correlate AC FC with delta, plot, and calculate agreement
+MPRA_minP.sig <-
+merge(MPRA_minP.ratio[with(MPRA_minP.ratio, oligo %in% fdr1HAC.oligo), ], ds2, by =
+"oligo")
+deepsea.DELTA <-
+ddply(MPRA_minP.sig, ~ oligo, summarise, mean(K562.DNase.None))[, 2]
+MPRA.FC <- ddply(MPRA_minP.sig, ~ oligo, summarise, mean(GATA1.fc))[, 2]
+plot(cbind(deepsea.DELTA, MPRA.FC),
+pch = 20,
+main = "MPRA and DeepSea correlation at ACs/nMFVs")
+cor(cbind(deepsea.DELTA, MPRA.FC))
+table(deepsea.DELTA * MPRA.FC > 0)
+
+
+####################
+#Read in PICS score for CEU population
+PICS <-
+read.table(
+paste0(dir, "FunctionalEnrichments/", "MPRA_RBC.pics"),
+header = F,
+stringsAsFactors = F
+)
+colnames(PICS) <- c("tagSNP", "testSNP", "empty", "R2", "phase", "score")
+PICS$oligo <-
+gsub("chr", "", gsub(" [ACTG]* [ACTG]*$", "", gsub(":", " ", PICS$testSNP)))
+PICS$tagSNPoligo <-
+gsub("chr", "", gsub(" [ACTG]* [ACTG]*$", "", gsub(":", " ", PICS$tagSNP)))
+codingSNPs <-
+c(
+"1 158575729",
+"1 248039451",
+"6 25842951",
+"6 32602269",
+"10 45966422",
+"11 67207426",
+"11 73009084",
+"12 111884608",
+"16 67902326",
+"19 4366219",
+"19 33181484",
+"22 21939675",
+"22 32880585",
+"22 37462936"
+)
+condSNPs <-
+c(
+"3 195834357",
+"4 55395024",
+"6 25842951",
+"6 26107463",
+"6 41914378",
+"6 41925304",
+"6 135418916",
+"6 135423209",
+"6 135427159",
+"9 136131592",
+"9 136154168",
+"10 45966422",
+"16 163598"
+)
+PICS <- PICS[!(PICS$tagSNPoligo %in% codingSNPs), ]
+#PICS <- PICS[!(PICS$tagSNPoligo %in% condSNPs),]
+
+#Compute PICS score in FDR bins
+fdr01.value <- PICS[with(PICS, oligo %in% fdr01.oligo), ]$score
+fdr1.value <- PICS[with(PICS, oligo %in% fdr1.oligo), ]$score
+fdr5.value <- PICS[with(PICS, oligo %in% fdr5.oligo), ]$score
+fdr10.value <- PICS[with(PICS, oligo %in% fdr10.oligo), ]$score
+fdr20.value <- PICS[with(PICS, oligo %in% fdr20.oligo), ]$score
+fdr50.value <- PICS[with(PICS, oligo %in% fdr50.oligo), ]$score
+fdr100.value <- PICS[with(PICS, oligo %in% fdr100.oligo), ]$score
+fdr1controls.value <-
+PICS[with(PICS, oligo %in% fdr1controls.oligo), ]$score
+fdr1HAC.value <- PICS[with(PICS, oligo %in% fdr1HAC.oligo), ]$score
+combined <-
+as.data.frame(cbind(
+value = c(
+fdr01.value,
+fdr1.value,
+fdr5.value,
+fdr10.value,
+fdr20.value,
+fdr50.value,
+fdr100.value,
+fdr1controls.value,
+fdr1HAC.value
+),
+group = c(
+rep("0.1%", length(fdr01.value)),
+rep("1%", length(fdr1.value)),
+rep("5%", length(fdr5.value)),
+rep("10%", length(fdr10.value)),
+rep("20%", length(fdr20.value)),
+rep("50%", length(fdr50.value)),
+rep("100%", length(fdr100.value)),
+rep("ctrls", length(fdr1controls.value)),
+rep("HACs", length(fdr1HAC.value))
+)
+), stringsAsFactors = F)
+combined$value <- as.numeric(combined$value)
+combined$group <-
+factor(combined$group,
+ordered = T,
+levels = unique(combined$group))
+
+#Plot and perform hypothesis tests
+combined.table <-
+aggregate(combined$value, by = list(combined$group), mean)
+height <- t(combined.table[-1])
+colnames(height) <- combined.table[, 1]
+barplot(height, pch = 20, main = "PICS enrichments")
+
+#Calculate credible sets from PICS
+#Choose credible set percentile
+PS.score = 0.90
+PICS$cumsum <-
+0
+for (i in levels(factor(PICS$tagSNP))) {
+PICS[PICS$tagSNP == i, ]$cumsum <-
+cumsum(PICS[PICS$tagSNP %in% i, ]$score)
+}
+PICS$cs <- ifelse(PICS$cumsum - PICS$score > PS.score, 0, 1)
+temp <- merge(MPRA_minP.ratio, PICS, by = "oligo")
+CS <- temp[temp$cs == 1, ]
+nCS <- temp[temp$cs == 0, ]
+#length(unique(CS[CS$GATA1.mut.padj < 0.01 | CS$CTRL.mut.padj < 0.01 ,]$oligo))
+#length(unique(CS$oligo))
+#length(unique(nCS[nCS$GATA1.mut.padj < 0.01 | nCS$CTRL.mut.padj < 0.01 ,]$oligo))
+#length(unique(nCS$oligo))
+
+#Credible set enrichment:
+(length(unique(CS[CS$GATA1.mut.padj < 0.01 |
+CS$CTRL.mut.padj < 0.01 , ]$oligo)) / length(unique(CS$oligo))) / (length(unique(nCS[nCS$GATA1.mut.padj < 0.01 |
+nCS$CTRL.mut.padj < 0.01 , ]$oligo)) /
+length(unique(nCS$oligo)))
+
+```
+
+<br></br>
+Boxplots for highlighted MFVs <b>Figure 4E, 4F, 4G, 4H</b>:
+```{r, echo=TRUE, fig.width=6, fig.height=4}
+#RBM38 variant
+i = "20 55990405"
+par(mfrow = c(1, 2))
+boxplot(
+CTRL.temp[CTRL.temp$oligo == i, ]$value ~ factor(CTRL.temp[CTRL.temp$oligo ==
+i, ]$byallele),
+cex.axis = 0.6,
+las = 2,
+main = "rs737092"
+)
+boxplot(
+GATA1.temp[GATA1.temp$oligo == i, ]$value ~ factor(GATA1.temp[GATA1.temp$oligo ==
+i, ]$byallele),
+cex.axis = 0.6,
+las = 2,
+main = "rs737092"
+)
+
+#SMIM1 variant
+i = "1 3691528"
+par(mfrow = c(1, 2))
+boxplot(
+CTRL.temp[CTRL.temp$oligo == i, ]$value ~ factor(CTRL.temp[CTRL.temp$oligo ==
+i, ]$byallele),
+cex.axis = 0.6,
+las = 2,
+main = "rs1175550"
+)
+boxplot(
+GATA1.temp[GATA1.temp$oligo == i, ]$value ~ factor(GATA1.temp[GATA1.temp$oligo ==
+i, ]$byallele),
+cex.axis = 0.6,
+las = 2,
+main = "rs1175550"
+)
+
+#CD164 variant
+i = "6 109625879"
+par(mfrow = c(1, 2))
+boxplot(
+CTRL.temp[CTRL.temp$oligo == i, ]$value ~ factor(CTRL.temp[CTRL.temp$oligo ==
+i, ]$byallele),
+cex.axis = 0.6,
+las = 2,
+main = "rs1546723"
+)
+boxplot(
+GATA1.temp[GATA1.temp$oligo == i, ]$value ~ factor(GATA1.temp[GATA1.temp$oligo ==
+i, ]$byallele),
+cex.axis = 0.6,
+las = 2,
+main = "rs1546723"
+)
+
+#PGS1 variant
+i = "20 55990405"
+par(mfrow = c(1, 2))
+boxplot(
+CTRL.temp[CTRL.temp$oligo == i, ]$value ~ factor(CTRL.temp[CTRL.temp$oligo ==
+i, ]$byallele),
+cex.axis = 0.6,
+las = 2,
+main = "rs4490057"
+)
+boxplot(
+GATA1.temp[GATA1.temp$oligo == i, ]$value ~ factor(GATA1.temp[GATA1.temp$oligo ==
+i, ]$byallele),
+cex.axis = 0.6,
+las = 2,
+main = "rs4490057"
+)
+```
+
+<br></br>
+Plot DNA shape features for select MFVs <b>Figure 6D, 6E, 6F</b>:
+```{r, echo=TRUE, fig.width=8, fig.height=3}
+#SFigure X1 (Plot DNA shape data for SMIM1 variant)
+SMIM1 <-
+read.table(paste0(dir, "Shape/", "SMIM1_shape.txt"),
+sep = "\t",
+header = T)
+#ggplot(data=SMIM1,aes(x=number,y=MGW,color=type)) + geom_line() + scale_x_discrete(labels=SMIM1$basepair) + theme_bw() + theme(plot.background = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),panel.border = element_blank())
+#ggplot(data=SMIM1,aes(x=number,y=Roll,color=type)) + geom_line() + scale_x_discrete(labels=SMIM1$basepair) + theme_bw() + theme(plot.background = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),panel.border = element_blank())
+ggplot(data = SMIM1, aes(x = number, y = ProT, color = type)) + geom_line() + scale_x_discrete(labels =
+SMIM1$basepair) + theme_bw() + theme(
+plot.background = element_blank(),
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+panel.border = element_blank()
+)
+ggplot(data = SMIM1, aes(x = number, y = HelT, color = type)) + geom_line() + scale_x_discrete(labels =
+SMIM1$basepair) + theme_bw() + theme(
+plot.background = element_blank(),
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+panel.border = element_blank()
+)
+
+#SFigure X2 (Plot DNA shape data for RBM38 variant)
+RBM38 <-
+read.table(paste0(dir, "Shape/", "RBM38_shape.txt"),
+sep = "\t",
+header = T)
+#ggplot(data=RBM38,aes(x=number,y=MGW,color=type)) + geom_line() + scale_x_discrete(labels=RBM38$basepair) + theme_bw() + theme(plot.background = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),panel.border = element_blank())
+#ggplot(data=RBM38,aes(x=number,y=Roll,color=type)) + geom_line() + scale_x_discrete(labels=RBM38$basepair) + theme_bw() + theme(plot.background = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),panel.border = element_blank())
+ggplot(data = RBM38, aes(x = number, y = ProT, color = type)) + geom_line() + scale_x_discrete(labels =
+RBM38$basepair) + theme_bw() + theme(
+plot.background = element_blank(),
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+panel.border = element_blank()
+)
+ggplot(data = RBM38, aes(x = number, y = HelT, color = type)) + geom_line() + scale_x_discrete(labels =
+RBM38$basepair) + theme_bw() + theme(
+plot.background = element_blank(),
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+panel.border = element_blank()
+)
+
+
+#SFigure X2 (Plot DNA shape data for PGS1 variant)
+PGS1 <-
+read.table(paste0(dir, "Shape/", "PGS1_shape.txt"),
+sep = "\t",
+header = T)
+#ggplot(data=PGS1,aes(x=number,y=MGW,color=type)) + geom_line() + scale_x_discrete(labels=PGS1$basepair) + theme_bw() + theme(plot.background = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),panel.border = element_blank())
+#ggplot(data=PGS1,aes(x=number,y=Roll,color=type)) + geom_line() + scale_x_discrete(labels=PGS1$basepair) + theme_bw() + theme(plot.background = element_blank(),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),panel.border = element_blank())
+ggplot(data = PGS1, aes(x = number, y = ProT, color = type)) + geom_line() + scale_x_discrete(labels =
+PGS1$basepair) + theme_bw() + theme(
+plot.background = element_blank(),
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+panel.border = element_blank()
+)
+ggplot(data = PGS1, aes(x = number, y = HelT, color = type)) + geom_line() + scale_x_discrete(labels =
+PGS1$basepair) + theme_bw() + theme(
+plot.background = element_blank(),
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+panel.border = element_blank()
+)
+
+```
+
+<br></br>
+Read in RNA-seq data for normal erythropoiesis and RBM knockdown:
+```{r, echo=TRUE}
+
+
+#Read in FPKM data and process it
+tblFPKM <-
+read.table(paste0(dir, "RNAseq/RBM38/", "genes.fpkm_table"), header = T)
+colnames(tblFPKM)[1] <- "tracking.id"
+
+#Read in attribute data and process it
+tblATTR <-
+read.table(paste0(dir, "RNAseq/RBM38/", "genes.attr_table"), header = T)
+tblATTR <- tblATTR[, c("tracking_id", "gene_short_name")]
+colnames(tblATTR) <- c("tracking.id", "gene")
+
+#Merge
+tblATTR <- merge(tblATTR, tblFPKM, by = "tracking.id")
+
+#Apply filters
+tblATTR <- tblATTR[tblATTR$gene != "-", ]
+tblATTR$max <- rowMaxs(tblATTR[, 3:33])
+cutoff <- quantile(tblATTR$max)[3]
+tblATTR <- tblATTR[tblATTR$max > cutoff, ]
+
+#Add FPKM suffix
+colnames(tblATTR)[3:33] <-
+as.vector(sapply(colnames(tblATTR)[3:33], paste0, "_FPKM"))
+
+```
+
+<br></br>
+Plot expression correlations <b>(Figure S7B</b>:
+```{r, echo=TRUE, fig.width=8, fig.height=7}
+#Plot RNA-seq correlations
+temp <- tblATTR[, grep("_FPKM", colnames(tblATTR))]
+temp <- temp[, -6]
+breaks.val = seq(0.4, 1, by = 0.05)
+heatmap.2(
+rcorr(as.matrix(temp), type = "spearman")[1]$r,
+trace = "none",
+cexCol = 0.7,
+cexRow = 0.7,
+dendrogram = 'both',
+col = colorRampPalette(c("yellow", "white", "blue"))(length(breaks.val) -
+1),
+breaks = breaks.val,
+reorderfun = function(d, w)
+reorder(d, c(
+rep(9, 6),
+rep(2, 3),
+rep(1, 3),
+rep(3, 3),
+rep(8, 3),
+rep(7, 3),
+rep(4, 3),
+rep(5, 3),
+rep(6, 3)
+), max)
+)
+```
+
+<br></br>
+Read in and process splicing data:
+```{r, echo=TRUE}
+#Read in PSI data and prcoess it
+tblPSI <-
+read.table(paste0(dir, "RNAseq/Splicing/", "SUPPA_PSI_SE.psi"),
+row.names = NULL)
+colnames(tblPSI)[1] <- "exon"
+tblPSI$diff <-
+(tblPSI[, "RBM38_shLuc_0"] + tblPSI[, "RBM38_shLuc_2"]) / 2 - (tblPSI[, "RBM38_sh1_0"] + tblPSI[, "RBM38_sh1_1"] + tblPSI[, "RBM38_sh2_0"] + tblPSI[, "RBM38_sh2_1"]) /
+4
+colnames(tblPSI)[2:33] <-
+as.vector(sapply(colnames(tblPSI)[2:33], paste0, "_PSI"))
+temp.names <- unlist(strsplit(tblPSI[, ]$exon, ";"))
+tblPSI$tracking.id <- temp.names[seq(1, length(temp.names), 2)]
+
+#Merge final table
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+
+#Identify differentially spliced exons during terminal erythroid differentiation
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_ProE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_ProE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_ProE_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$OrthoEvProE_PSI <-
+(tblFINAL$hs_OrthE_0_PSI + tblFINAL$hs_OrthE_1_PSI + tblFINAL$hs_OrthE_2_PSI) /
+3 - (tblFINAL$hs_ProE_0_PSI + tblFINAL$hs_ProE_1_PSI + tblFINAL$hs_ProE_2_PSI) /
+3
+OrthoEvProE_PSI <- tblFINAL[, c("exon", "OrthoEvProE_PSI")]
+OrthoEvProE <-
+tblFINAL[abs((
+tblFINAL$hs_OrthE_0_PSI + tblFINAL$hs_OrthE_1_PSI + tblFINAL$hs_OrthE_2_PSI
+) / 3 - (
+tblFINAL$hs_ProE_0_PSI + tblFINAL$hs_ProE_1_PSI + tblFINAL$hs_ProE_2_PSI
+) / 3
+) > 0.2, ]
+
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_eBasoE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_eBasoE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_eBasoE_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$OrthoEveBasoE_PSI <-
+(tblFINAL$hs_OrthE_0_PSI + tblFINAL$hs_OrthE_1_PSI + tblFINAL$hs_OrthE_2_PSI) /
+3 - (tblFINAL$hs_eBasoE_0_PSI + tblFINAL$hs_eBasoE_1_PSI + tblFINAL$hs_eBasoE_2_PSI) /
+3
+OrthoEveBasoE_PSI <- tblFINAL[, c("exon", "OrthoEveBasoE_PSI")]
+OrthoEveBasoE <-
+tblFINAL[abs((
+tblFINAL$hs_OrthE_0_PSI + tblFINAL$hs_OrthE_1_PSI + tblFINAL$hs_OrthE_2_PSI
+) / 3 - (
+tblFINAL$hs_eBasoE_0_PSI + tblFINAL$hs_eBasoE_1_PSI + tblFINAL$hs_eBasoE_2_PSI
+) / 3
+) > 0.2, ]
+
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_lBasoE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_lBasoE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_lBasoE_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$OrthoEvlBasoE_PSI <-
+(tblFINAL$hs_OrthE_0_PSI + tblFINAL$hs_OrthE_1_PSI + tblFINAL$hs_OrthE_2_PSI) /
+3 - (tblFINAL$hs_lBasoE_0_PSI + tblFINAL$hs_lBasoE_1_PSI + tblFINAL$hs_lBasoE_2_PSI) /
+3
+OrthoEvlBasoE_PSI <- tblFINAL[, c("exon", "OrthoEvlBasoE_PSI")]
+OrthoEvlBasoE <-
+tblFINAL[abs((
+tblFINAL$hs_OrthE_0_PSI + tblFINAL$hs_OrthE_1_PSI + tblFINAL$hs_OrthE_2_PSI
+) / 3 - (
+tblFINAL$hs_lBasoE_0_PSI + tblFINAL$hs_lBasoE_1_PSI + tblFINAL$hs_lBasoE_2_PSI
+) / 3
+) > 0.2, ]
+
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_OrthE_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$OrthoEvPolyE_PSI <-
+(tblFINAL$hs_OrthE_0_PSI + tblFINAL$hs_OrthE_1_PSI + tblFINAL$hs_OrthE_2_PSI) /
+3 - (tblFINAL$hs_PolyE_0_PSI + tblFINAL$hs_PolyE_1_PSI + tblFINAL$hs_PolyE_2_PSI) /
+3
+OrthoEvPolyE_PSI <- tblFINAL[, c("exon", "OrthoEvPolyE_PSI")]
+OrthoEvPolyE <-
+tblFINAL[abs((
+tblFINAL$hs_OrthE_0_PSI + tblFINAL$hs_OrthE_1_PSI + tblFINAL$hs_OrthE_2_PSI
+) / 3 - (
+tblFINAL$hs_PolyE_0_PSI + tblFINAL$hs_PolyE_1_PSI + tblFINAL$hs_PolyE_2_PSI
+) / 3
+) > 0.2, ]
+
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_ProE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_ProE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_ProE_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$PolyEvProE_PSI <-
+(tblFINAL$hs_PolyE_0_PSI + tblFINAL$hs_PolyE_1_PSI + tblFINAL$hs_PolyE_2_PSI) /
+3 - (tblFINAL$hs_ProE_0_PSI + tblFINAL$hs_ProE_1_PSI + tblFINAL$hs_ProE_2_PSI) /
+3
+PolyEvProE_PSI <- tblFINAL[, c("exon", "PolyEvProE_PSI")]
+PolyEvProE <-
+tblFINAL[abs((
+tblFINAL$hs_PolyE_0_PSI + tblFINAL$hs_PolyE_1_PSI + tblFINAL$hs_PolyE_2_PSI
+) / 3 - (
+tblFINAL$hs_ProE_0_PSI + tblFINAL$hs_ProE_1_PSI + tblFINAL$hs_ProE_2_PSI
+) / 3
+) > 0.2, ]
+
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_eBasoE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_eBasoE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_eBasoE_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$PolyEveBasoE_PSI <-
+(tblFINAL$hs_PolyE_0_PSI + tblFINAL$hs_PolyE_1_PSI + tblFINAL$hs_PolyE_2_PSI) /
+3 - (tblFINAL$hs_eBasoE_0_PSI + tblFINAL$hs_eBasoE_1_PSI + tblFINAL$hs_eBasoE_2_PSI) /
+3
+PolyEveBasoE_PSI <- tblFINAL[, c("exon", "PolyEveBasoE_PSI")]
+PolyEveBasoE <-
+tblFINAL[abs((
+tblFINAL$hs_PolyE_0_PSI + tblFINAL$hs_PolyE_1_PSI + tblFINAL$hs_PolyE_2_PSI
+) / 3 - (
+tblFINAL$hs_eBasoE_0_PSI + tblFINAL$hs_eBasoE_1_PSI + tblFINAL$hs_eBasoE_2_PSI
+) / 3
+) > 0.2, ]
+
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_lBasoE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_lBasoE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_lBasoE_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$PolyEvlBasoE_PSI <-
+(tblFINAL$hs_PolyE_0_PSI + tblFINAL$hs_PolyE_1_PSI + tblFINAL$hs_PolyE_2_PSI) /
+3 - (tblFINAL$hs_lBasoE_0_PSI + tblFINAL$hs_lBasoE_1_PSI + tblFINAL$hs_lBasoE_2_PSI) /
+3
+PolyEvlBasoE_PSI <- tblFINAL[, c("exon", "PolyEvlBasoE_PSI")]
+PolyEvlBasoE <-
+tblFINAL[abs((
+tblFINAL$hs_PolyE_0_PSI + tblFINAL$hs_PolyE_1_PSI + tblFINAL$hs_PolyE_2_PSI
+) / 3 - (
+tblFINAL$hs_lBasoE_0_PSI + tblFINAL$hs_lBasoE_1_PSI + tblFINAL$hs_lBasoE_2_PSI
+) / 3
+) > 0.2, ]
+
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_ProE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_ProE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_ProE_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$LucvProE_PSI <-
+(
+tblFINAL$RBM38_shLuc_0_PSI + tblFINAL$RBM38_shLuc_1_PSI + tblFINAL$RBM38_shLuc_2_PSI
+) / 3 - (tblFINAL$hs_ProE_0_PSI + tblFINAL$hs_ProE_1_PSI + tblFINAL$hs_ProE_2_PSI) /
+3
+LucvProE_PSI <- tblFINAL[, c("exon", "LucvProE_PSI")]
+LucvProE <-
+tblFINAL[abs((
+tblFINAL$RBM38_shLuc_0_PSI + tblFINAL$RBM38_shLuc_1_PSI + tblFINAL$RBM38_shLuc_2_PSI
+) / 3 - (
+tblFINAL$hs_ProE_0_PSI + tblFINAL$hs_ProE_1_PSI + tblFINAL$hs_ProE_2_PSI
+) / 3
+) > 0.2, ]
+
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_eBasoE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_eBasoE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_eBasoE_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$LucveBasoE_PSI <-
+(
+tblFINAL$RBM38_shLuc_0_PSI + tblFINAL$RBM38_shLuc_1_PSI + tblFINAL$RBM38_shLuc_2_PSI
+) / 3 - (tblFINAL$hs_eBasoE_0_PSI + tblFINAL$hs_eBasoE_1_PSI + tblFINAL$hs_eBasoE_2_PSI) /
+3
+LucveBasoE_PSI <- tblFINAL[, c("exon", "LucveBasoE_PSI")]
+LucveBasoE <-
+tblFINAL[abs((
+tblFINAL$RBM38_shLuc_0_PSI + tblFINAL$RBM38_shLuc_1_PSI + tblFINAL$RBM38_shLuc_2_PSI
+) / 3 - (
+tblFINAL$hs_eBasoE_0_PSI + tblFINAL$hs_eBasoE_1_PSI + tblFINAL$hs_eBasoE_2_PSI
+) / 3
+) > 0.2, ]
+
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_lBasoE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_lBasoE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_lBasoE_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$LucvlBasoE_PSI <-
+(
+tblFINAL$RBM38_shLuc_0_PSI + tblFINAL$RBM38_shLuc_1_PSI + tblFINAL$RBM38_shLuc_2_PSI
+) / 3 - (tblFINAL$hs_lBasoE_0_PSI + tblFINAL$hs_lBasoE_1_PSI + tblFINAL$hs_lBasoE_2_PSI) /
+3
+LucvlBasoE_PSI <- tblFINAL[, c("exon", "LucvlBasoE_PSI")]
+LucvlBasoE <-
+tblFINAL[abs((
+tblFINAL$RBM38_shLuc_0_PSI + tblFINAL$RBM38_shLuc_1_PSI + tblFINAL$RBM38_shLuc_2_PSI
+) / 3 - (
+tblFINAL$hs_lBasoE_0_PSI + tblFINAL$hs_lBasoE_1_PSI + tblFINAL$hs_lBasoE_2_PSI
+) / 3
+) > 0.2, ]
+
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "hs_PolyE_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+tblFINAL$LucvPolyE_PSI <-
+(
+tblFINAL$RBM38_shLuc_0_PSI + tblFINAL$RBM38_shLuc_1_PSI + tblFINAL$RBM38_shLuc_2_PSI
+) / 3 - (tblFINAL$hs_PolyE_0_PSI + tblFINAL$hs_PolyE_1_PSI + tblFINAL$hs_PolyE_2_PSI) /
+3
+LucvPolyE_PSI <- tblFINAL[, c("exon", "LucvPolyE_PSI")]
+LucvPolyE <-
+tblFINAL[abs((
+tblFINAL$RBM38_shLuc_0_PSI + tblFINAL$RBM38_shLuc_1_PSI + tblFINAL$RBM38_shLuc_2_PSI
+) / 3 - (
+tblFINAL$hs_PolyE_0_PSI + tblFINAL$hs_PolyE_1_PSI + tblFINAL$hs_PolyE_2_PSI
+) / 3
+) > 0.2, ]
+
+#All pairwise combinations
+mapply(
+list(
+as.vector(OrthoEvProE$exon),
+as.vector(OrthoEveBasoE$exon),
+as.vector(OrthoEvlBasoE$exon),
+as.vector(OrthoEvPolyE$exon),
+as.vector(PolyEvProE$exon),
+as.vector(PolyEveBasoE$exon),
+as.vector(PolyEvlBasoE$exon),
+as.vector(LucvProE$exon),
+as.vector(LucveBasoE$exon),
+as.vector(LucvlBasoE$exon),
+as.vector(LucvPolyE$exon)
+),
+FUN = length
+)
+eryth.DS <-
+unique(
+c(
+as.vector(OrthoEvProE$exon),
+as.vector(OrthoEveBasoE$exon),
+as.vector(OrthoEvlBasoE$exon),
+as.vector(OrthoEvPolyE$exon),
+as.vector(PolyEvProE$exon),
+as.vector(PolyEveBasoE$exon),
+as.vector(PolyEvlBasoE$exon),
+as.vector(LucvProE$exon),
+as.vector(LucveBasoE$exon),
+as.vector(LucvlBasoE$exon),
+as.vector(LucvPolyE$exon)
+)
+)
+
+#Identify exons differentially spliced by RBM38
+tblFINAL <- merge(tblATTR, tblPSI, by.x = "tracking.id")
+tblFINAL <- merge(tblFINAL, OrthoEvProE_PSI, by = "exon", all.x = T)
+tblFINAL <- merge(tblFINAL, OrthoEveBasoE_PSI, by = "exon", all.x = T)
+tblFINAL <- merge(tblFINAL, OrthoEvlBasoE_PSI, by = "exon", all.x = T)
+tblFINAL <- merge(tblFINAL, OrthoEvPolyE_PSI, by = "exon", all.x = T)
+tblFINAL <- merge(tblFINAL, PolyEvProE_PSI, by = "exon", all.x = T)
+tblFINAL <- merge(tblFINAL, PolyEveBasoE_PSI, by = "exon", all.x = T)
+tblFINAL <- merge(tblFINAL, PolyEvlBasoE_PSI, by = "exon", all.x = T)
+tblFINAL <- merge(tblFINAL, LucvProE_PSI, by = "exon", all.x = T)
+tblFINAL <- merge(tblFINAL, LucveBasoE_PSI, by = "exon", all.x = T)
+tblFINAL <- merge(tblFINAL, LucvlBasoE_PSI, by = "exon", all.x = T)
+tblFINAL <- merge(tblFINAL, LucvPolyE_PSI, by = "exon", all.x = T)
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh1_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_sh2_1_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_0_PSI"] != -1, ]
+tblFINAL <- tblFINAL[tblFINAL[, "RBM38_shLuc_2_PSI"] != -1, ]
+tblFINAL[tblFINAL == -1] <- NA
+rbm38 <- tblFINAL[abs(tblFINAL$diff_PSI) > 0.20, ]
+```
+
+<br></br>
+Plot differentially spliced exons:
+```{r, echo=TRUE, fig.width=8, fig.height=7, message=FALSE}
+#Total RBM38 regulated exons:
+dim(rbm38[!(rbm38$gene %in% "RHD"), ])[1]
+
+#Total terminal erythroid specific exons:
+length(eryth.DS[!(eryth.DS %in% "RHD")])
+
+#Restrict to exons differentially spliced in terminal erythropoiesis
+rbm38 <- rbm38[rbm38$exon %in% eryth.DS, ]
+rbm38 <- rbm38[order(rbm38$diff_PSI, decreasing = T), ]
+rbm38.mat <- as.matrix(rbm38[, grep("_PSI", colnames(rbm38))])
+rbm38.mat <- rbm38.mat[, -(32:43)]
+row.names(rbm38.mat) <- rbm38$gene
+rbm38.mat2 <- as.matrix(rbm38[, grep("_PSI", colnames(rbm38))])
+rbm38.mat2 <- rbm38.mat2[, 32:43]
+row.names(rbm38.mat2) <- rbm38$gene
+breaks.val = seq(-2, 2, by = 0.05)
+rbm38.mat <-
+rbm38.mat[, c(
+"hs_CD34_0_PSI",
+"hs_CD34_1_PSI",
+"hs_CD34_2_PSI",
+"hs_BFUE_0_PSI",
+"hs_BFUE_1_PSI",
+"hs_BFUE_2_PSI",
+"hs_CFUE_0_PSI",
+"hs_CFUE_1_PSI",
+"hs_CFUE_2_PSI",
+"hs_ProE_0_PSI",
+"hs_ProE_1_PSI",
+"hs_ProE_2_PSI",
+"hs_eBasoE_0_PSI",
+"hs_eBasoE_1_PSI",
+"hs_eBasoE_2_PSI",
+"hs_lBasoE_0_PSI",
+"hs_lBasoE_1_PSI",
+"hs_lBasoE_2_PSI",
+"hs_PolyE_0_PSI",
+"hs_PolyE_1_PSI",
+"hs_PolyE_2_PSI",
+"hs_OrthE_0_PSI",
+"hs_OrthE_1_PSI",
+"hs_OrthE_2_PSI",
+"RBM38_shLuc_0_PSI",
+"RBM38_shLuc_2_PSI",
+"RBM38_sh1_0_PSI",
+"RBM38_sh1_1_PSI",
+"RBM38_sh2_0_PSI",
+"RBM38_sh2_1_PSI"
+)]
+heatmap.2(
+rbm38.mat,
+col = colorRampPalette(c("yellow", "white", "blue"))(length(breaks.val) -
+1),
+breaks = breaks.val,
+trace = "none",
+cexCol = 0.5,
+cexRow = 0.9,
+scale = "row",
+dendrogram = 'none',
+Rowv = FALSE,
+Colv = FALSE,
+cellnote = round(rbm38.mat * 100, 0),
+notecol = 'black',
+notecex = 0.65,
+density.info = "none"
+)
+
+```
+
+
