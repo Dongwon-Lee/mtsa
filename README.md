@@ -1,6 +1,6 @@
 ## MTSA: MPRA Tag Sequence Analysis
 
-Version 1.0.0 Last edited: April 21, 2021, (c) Dongwon Lee
+Version 1.0.0 Last edited: Sep 8, 2021, (c) Dongwon Lee
 
 MTSA is a sequence-based analysis for estimating tag sequence effects on 
 gene expression in massively parallele reporter assay (MPRA) experiment.
@@ -20,8 +20,7 @@ Note: SVR with gkm-kernels is a generalizable method. We implemented a general p
 
 *Please cite the following paper if you use MTSA in your research:*
 
-* Lee D†, Kapoor A, Lee C, Mudgett M, Beer MA, Chakravarti A. Improved identification of functional regulatory variants from massively parallel
-reporter assays by sequence correction of DNA tag bias - *submitted* *† Corresponding author*
+* Lee D†, Kapoor A, Lee C, Mudgett M, Beer MA, Chakravarti A. Sequence-based correction of barcode bias in massively parallel reporter assays. Genome Res. 2021 Sep;31(9):1638–1645. PMID: 34285053 *† Corresponding author*
 
 ### Installation
 
