@@ -20,7 +20,7 @@ Note: SVR with gkm-kernels is a generalizable method. We implemented a general p
 
 *Please cite the following paper if you use MTSA in your research:*
 
-* Lee D†, Kapoor A, Lee C, Mudgett M, Beer MA, Chakravarti A. Sequence-based correction of barcode bias in massively parallel reporter assays. Genome Res. 2021 Sep;31(9):1638–1645. PMID: 34285053 *† Corresponding author*
+* [Lee D†, Kapoor A, Lee C, Mudgett M, Beer MA, Chakravarti A. Sequence-based correction of barcode bias in massively parallel reporter assays. Genome Res. 2021 Sep;31(9):1638–1645. PMID: 34285053 *† Corresponding author*](https://genome.cshlp.org/content/31/9/1638.abstract)
 
 ### Installation
 
