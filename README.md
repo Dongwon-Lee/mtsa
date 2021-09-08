@@ -33,7 +33,7 @@ If successful, You should be able to find the following library file in the curr
 
     libmtsa.so
 
-`make install` will simply copy this library to the `../bin` direcory
+`make install` will simply copy this library to the `../bin` directory
 
 ### Get Started
 
